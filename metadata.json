@@ -1,0 +1,7 @@
+{
+  "name": "Memory Stardust",
+  "description": "Transform your photos into memory stardust and record the stories behind them with an AI companion.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
