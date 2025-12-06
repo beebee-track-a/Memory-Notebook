@@ -14,12 +14,12 @@ interface VoiceSubtitleProps {
 const VoiceSubtitle: React.FC<VoiceSubtitleProps> = ({
   text,
   isVisible,
-  maxWidth = "70%",
-  opacity = 0.6,
-  fontSize = "text-2xl md:text-3xl",
+  maxWidth = "80%",
+  opacity = 0.9,
+  fontSize = "text-3xl md:text-4xl",
   position = "bottom",
   typewriterEffect = true,
-  typewriterSpeed = 30, // chars per second
+  typewriterSpeed = 40, // Faster typing
 }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [isFullyDisplayed, setIsFullyDisplayed] = useState(false);
@@ -65,40 +65,31 @@ const VoiceSubtitle: React.FC<VoiceSubtitleProps> = ({
   if (!isVisible || !text) return null;
 
   return (
-    <div 
-      className={`absolute ${positionClasses[position]} left-1/2 -translate-x-1/2 z-30 transition-all duration-500 ease-out ${
-        isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-      }`}
+    <div
+      className={`absolute ${positionClasses[position]} left-1/2 -translate-x-1/2 z-30 transition-all duration-500 ease-out ${isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+        }`}
       style={{ maxWidth }}
     >
-      <div 
-        className="px-8 py-6 rounded-2xl backdrop-blur-xl border border-white/20 shadow-2xl"
-        style={{ 
-          backgroundColor: `rgba(0, 0, 0, ${opacity})`,
+      <div
+        className="px-8 py-6 rounded-3xl backdrop-blur-md border border-white/10 shadow-2xl transition-all duration-300 transform hover:scale-105"
+        style={{
+          backgroundColor: `rgba(255, 255, 255, 0.05)`, // Much lighter, cleaner glass feel
+          boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
         }}
       >
-        <p 
-          className={`${fontSize} font-serif leading-relaxed text-white text-center transition-all duration-300`}
+        <p
+          className={`${fontSize} font-medium tracking-tight text-white text-center transition-all duration-300 font-sans`}
           style={{
-            textShadow: '0 2px 20px rgba(0, 0, 0, 0.5)',
-            lineHeight: '1.6',
+            textShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
+            lineHeight: '1.4',
             wordBreak: 'break-word',
           }}
         >
           {displayedText}
           {typewriterEffect && !isFullyDisplayed && (
-            <span className="inline-block w-0.5 h-6 bg-white/80 ml-1 animate-pulse" />
+            <span className="inline-block w-3 h-3 bg-white rounded-full ml-2 animate-pulse" />
           )}
         </p>
-        
-        {/* Optional: Translation hint */}
-        {isFullyDisplayed && (
-          <div className="mt-3 text-center">
-            <button className="text-xs text-white/40 hover:text-white/70 transition-colors">
-              Tap to translate
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
