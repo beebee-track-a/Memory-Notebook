@@ -2,12 +2,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { createPcmBlob, decodeAudioData, base64ToUint8Array, PCM_SAMPLE_RATE, OUTPUT_SAMPLE_RATE } from '../services/audioStreamer';
 
-const GEMINI_API_KEY =
-  import.meta.env.VITE_GEMINI_API_KEY ||
-  import.meta.env.VITE_API_KEY ||
-  import.meta.env.GEMINI_API_KEY ||
-  import.meta.env.API_KEY;
-
 export interface UseGeminiLiveReturn {
   isConnected: boolean;
   isConnecting: boolean;
@@ -22,13 +16,13 @@ export interface UseGeminiLiveReturn {
     input: AnalyserNode | null;
     output: AnalyserNode | null;
   };
-  onTranscript?: (text: string) => void;
+  onTranscript?: (text: string, role: 'user' | 'assistant') => void;
   onTurnComplete?: () => void;
   setAudioLevel?: (level: number) => void;
 }
 
 export const useGeminiLive = (
-  onTranscript?: (text: string) => void,
+  onTranscript?: (text: string, role: 'user' | 'assistant') => void,
   onTurnComplete?: () => void,
   setAudioLevel?: (level: number) => void
 ): UseGeminiLiveReturn => {
@@ -48,6 +42,11 @@ export const useGeminiLive = (
   const currentSessionRef = useRef<any>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+
+  // Buffer for accumulating transcriptions
+  const userTranscriptBuffer = useRef<string>('');
+  const assistantTranscriptBuffer = useRef<string>('');
 
   // Cleanup function to stop all audio and close connections
   const cleanup = useCallback(() => {
@@ -87,6 +86,9 @@ export const useGeminiLive = (
     inputAnalyserRef.current = null;
     outputAnalyserRef.current = null;
 
+    // Reset gain node
+    gainNodeRef.current = null;
+
     // Close Gemini session
     if (currentSessionRef.current) {
       if (typeof currentSessionRef.current.close === 'function') {
@@ -102,7 +104,13 @@ export const useGeminiLive = (
   }, []);
 
   const connect = useCallback(async (systemInstruction?: string) => {
-    if (!GEMINI_API_KEY) {
+    const apiKey = 
+      import.meta.env.VITE_GEMINI_API_KEY ||
+      import.meta.env.VITE_API_KEY ||
+      import.meta.env.GEMINI_API_KEY ||
+      import.meta.env.API_KEY;
+    
+    if (!apiKey) {
       setError("API Key not found in environment variables.");
       return;
     }
@@ -146,24 +154,29 @@ export const useGeminiLive = (
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: false // Disable auto gain to allow manual control
         }
       });
       console.log('Microphone access granted!');
       streamRef.current = stream;
 
-      // 4. Setup Input Pipeline
+      // 4. Setup Input Pipeline with Gain Node
       const source = inputCtx.createMediaStreamSource(stream);
+      const gainNode = inputCtx.createGain();
+      gainNode.gain.value = 10.0; // Boost input by 10x (20dB) for better sensitivity
+      gainNodeRef.current = gainNode;
+      
       const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
       scriptProcessorRef.current = scriptProcessor;
 
-      source.connect(inputAnalyser);
+      source.connect(gainNode);
+      gainNode.connect(inputAnalyser);
       inputAnalyser.connect(scriptProcessor);
       scriptProcessor.connect(inputCtx.destination);
 
       // 5. Initialize Gemini Client
-      console.log('🔑 Initializing Gemini with API key:', GEMINI_API_KEY?.substring(0, 20) + '...');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      console.log('🔑 Initializing Gemini with API key:', apiKey?.substring(0, 20) + '...');
+      const ai = new GoogleGenAI({ apiKey });
       const model = 'gemini-2.5-flash-native-audio-preview-09-2025';
       console.log('📡 Using model:', model);
 
@@ -177,6 +190,8 @@ export const useGeminiLive = (
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
           },
           systemInstruction: systemInstruction || "You are a helpful, witty, and concise AI assistant. Keep your responses short and conversational.",
+          inputAudioTranscription: {}, // Enable user speech transcription
+          outputAudioTranscription: {}, // Enable AI speech transcription
         },
         callbacks: {
           onopen: () => {
@@ -186,17 +201,24 @@ export const useGeminiLive = (
 
             // Start processing audio input
             scriptProcessor.onaudioprocess = (e) => {
+              // Get audio data from the gain-boosted input
               const inputData = e.inputBuffer.getChannelData(0);
+              
+              // Additional amplification in software (multiply by 3x)
+              const amplifiedData = new Float32Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                amplifiedData[i] = inputData[i] * 3.0;
+              }
 
               // Calculate audio level for visualization
               if (setAudioLevel) {
                 let sum = 0;
-                for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-                const rms = Math.sqrt(sum / inputData.length);
+                for (let i = 0; i < amplifiedData.length; i++) sum += amplifiedData[i] * amplifiedData[i];
+                const rms = Math.sqrt(sum / amplifiedData.length);
                 if (rms > 0.05) setAudioLevel(Math.min(rms * 5, 0.5));
               }
 
-              const pcmBlob = createPcmBlob(inputData);
+              const pcmBlob = createPcmBlob(amplifiedData);
 
               // Send to Gemini
               if (sessionPromiseRef.current) {
@@ -256,24 +278,44 @@ export const useGeminiLive = (
               nextStartTimeRef.current += audioBuffer.duration;
             }
 
-            // Handle transcription
-            if (message.serverContent?.outputTranscription?.text && onTranscript) {
-              onTranscript(message.serverContent.outputTranscription.text);
+            // Handle transcription - accumulate partial transcriptions and send complete turns
+            const serverContent = message.serverContent;
+
+            // Handle user transcription (what the user said)
+            if (serverContent?.inputTranscription?.text) {
+              userTranscriptBuffer.current += serverContent.inputTranscription.text;
             }
 
-            // Handle turn complete
-            if (message.serverContent?.turnComplete && onTurnComplete) {
-              onTurnComplete();
+            // Handle assistant transcription (what the AI said)
+            if (serverContent?.outputTranscription?.text) {
+              assistantTranscriptBuffer.current += serverContent.outputTranscription.text;
+            }
+
+            // Handle turn complete - send buffered transcriptions when turn is done
+            if (message.serverContent?.turnComplete) {
+              // Send user transcript if any
+              if (userTranscriptBuffer.current.trim() && onTranscript) {
+                onTranscript(userTranscriptBuffer.current.trim(), 'user');
+                userTranscriptBuffer.current = ''; // Clear buffer
+              }
+
+              // Send assistant transcript if any
+              if (assistantTranscriptBuffer.current.trim() && onTranscript) {
+                onTranscript(assistantTranscriptBuffer.current.trim(), 'assistant');
+                assistantTranscriptBuffer.current = ''; // Clear buffer
+              }
+
+              if (onTurnComplete) {
+                onTurnComplete();
+              }
             }
           },
           onclose: () => {
             console.log('🔌 Gemini Live Session Closed');
-            console.trace('Session close stack trace');
             cleanup();
           },
           onerror: (err) => {
             console.error('💥 Gemini Live Error:', err);
-            console.error('Error details:', JSON.stringify(err, null, 2));
             setError(err?.message || "Connection error occurred.");
             cleanup();
           }
