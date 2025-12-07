@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Mic, MicOff, Save, Share2, Sparkles, X, RotateCcw, Volume2, Volume1, Download } from 'lucide-react';
+import { Upload, Mic, MicOff, Save, Share2, Sparkles, X, RotateCcw, Volume2, Volume1, Download, Settings } from 'lucide-react';
 
-import { AppState, SessionState, PhotoData, MemoryTurn } from './types';
-import { SYSTEM_INSTRUCTION } from './constants';
+import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary } from './types';
+import { SYSTEM_INSTRUCTION, DEFAULT_PHOTO_URLS } from './constants';
 import ParticleCanvas from './components/ParticleCanvas';
 import AmbiencePlayer from './components/AmbiencePlayer';
 import VoiceSubtitle from './components/VoiceSubtitle';
 import MicButton from './components/MicButton';
 import VoiceWaveform from './components/VoiceWaveform';
 import VoiceStatusIndicator, { VoiceConnectionStatus } from './components/VoiceStatusIndicator';
+import SettingsPanel from './components/SettingsPanel';
 import { useGeminiLive } from './hooks/useGeminiLive';
 
 export default function App() {
@@ -43,6 +44,16 @@ export default function App() {
   // Voice UI States
   const [voiceStatus, setVoiceStatus] = useState<VoiceConnectionStatus>('idle');
 
+  // NEW: Photo Management (for background particle effects)
+  const [defaultPhotoIndex, setDefaultPhotoIndex] = useState(0); // Which default photo to use
+  const [uploadedPhotos, setUploadedPhotos] = useState<UploadedPhoto[]>([]); // User's custom photos
+  const [selectedCustomPhotoId, setSelectedCustomPhotoId] = useState<string | null>(null); // null = use default
+  const [showSettings, setShowSettings] = useState(false); // Settings panel visibility
+
+  // NEW: Session Tracking (for summary generation)
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
+  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+
   // Use the Gemini Live hook
   const {
     isConnected,
@@ -52,18 +63,22 @@ export default function App() {
     disconnect: disconnectGemini,
     analysers
   } = useGeminiLive(
-    // onTranscript callback
-    (text: string) => {
-      setCurrentText(prev => prev + text);
+    // onTranscript callback - store both user and assistant transcriptions immediately
+    (text: string, role: 'user' | 'assistant') => {
+      console.log('📝 Transcript received:', { role, text });
+      // Store both user and assistant transcriptions immediately in background
+      setTranscript(prev => {
+        const updated = [...prev, {
+          role: role,
+          text: text,
+          timestamp: Date.now()
+        }];
+        console.log('✅ Transcript stored. Total turns:', updated.length);
+        return updated;
+      });
     },
     // onTurnComplete callback
     () => {
-      setTranscript(prev => [...prev, {
-        role: 'assistant',
-        text: currentText,
-        timestamp: Date.now()
-      }]);
-      setCurrentText('');
       setSessionState('IDLE');
     },
     // setAudioLevel callback
@@ -97,6 +112,17 @@ export default function App() {
 
   // --- Helpers ---
 
+  // NEW: Get the current photo URL for particle effects
+  const getCurrentPhotoUrl = (): string => {
+    // If user selected a custom photo, use it
+    if (selectedCustomPhotoId) {
+      const customPhoto = uploadedPhotos.find(p => p.id === selectedCustomPhotoId);
+      if (customPhoto) return customPhoto.previewUrl;
+    }
+    // Otherwise use default photo
+    return DEFAULT_PHOTO_URLS[defaultPhotoIndex];
+  };
+
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -115,6 +141,17 @@ export default function App() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // NEW: Start chat directly without photo upload requirement
+  const startChatSession = () => {
+    setAppState('RENDERING');
+    // Simulate rendering time for effect
+    setTimeout(() => {
+      setAppState('SESSION');
+      setIsMusicPlaying(true);
+      setSessionStartTime(Date.now()); // Track when session starts
+    }, 2500);
   };
 
   const startMemoryProcess = () => {
@@ -138,6 +175,45 @@ export default function App() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // NEW: Photo Management Handlers
+  const handlePhotoUpload = (file: File) => {
+    if (uploadedPhotos.length >= 5) {
+      alert('Maximum 5 photos allowed. Please delete one first.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      const base64Data = result.split(',')[1];
+
+      const newPhoto: UploadedPhoto = {
+        id: `photo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        previewUrl: result,
+        base64Data,
+        mimeType: file.type,
+        uploadedAt: Date.now(),
+      };
+
+      setUploadedPhotos(prev => [...prev, newPhoto]);
+      // Auto-select the newly uploaded photo
+      setSelectedCustomPhotoId(newPhoto.id);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePhotoSelect = (photoId: string | null) => {
+    setSelectedCustomPhotoId(photoId);
+  };
+
+  const handlePhotoDelete = (photoId: string) => {
+    setUploadedPhotos(prev => prev.filter(p => p.id !== photoId));
+    // If deleted photo was selected, revert to default
+    if (selectedCustomPhotoId === photoId) {
+      setSelectedCustomPhotoId(null);
+    }
   };
 
   // --- Gemini Live Integration ---
@@ -177,31 +253,132 @@ export default function App() {
           alert("API Key missing. Please check .env file and restart dev server.");
           return;
       }
-      if (!photoData) {
-          console.error('❌ No photo data');
-          return;
-      }
+      // Photo is no longer required - we use default backgrounds
+      // if (!photoData) {
+      //     console.error('❌ No photo data');
+      //     return;
+      // }
 
       setSessionState('IDLE');
 
       console.log('📡 Calling connectGemini with:', {
-        instructionLength: SYSTEM_INSTRUCTION.length
+        instructionLength: SYSTEM_INSTRUCTION.length,
+        instructionPreview: SYSTEM_INSTRUCTION.substring(0, 100) + '...'
       });
 
       // Connect using the hook with system instruction
       await connectGemini(SYSTEM_INSTRUCTION);
 
-      console.log('✅ connectGemini call completed');
+      console.log('✅ connectGemini call completed - connection should be established');
     } catch (error) {
       console.error('💥 Error in handleMicClick:', error);
       alert(`Connection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
-  const endSession = () => {
-      disconnectGemini();
-      setAppState('REVIEW');
-      setIsMusicPlaying(false);
+  // NEW: Generate AI summary of the conversation using Gemini API
+  const generateSummary = async (): Promise<SessionSummary> => {
+    const apiKey =
+      import.meta.env.VITE_GEMINI_API_KEY ||
+      import.meta.env.VITE_API_KEY ||
+      import.meta.env.GEMINI_API_KEY ||
+      import.meta.env.API_KEY;
+
+    if (!apiKey) {
+      throw new Error('API key not found');
+    }
+
+    const endTime = Date.now();
+    const duration = sessionStartTime ? Math.floor((endTime - sessionStartTime) / 1000) : 0;
+    const userMessages = transcript.filter(t => t.role === 'user');
+    const aiMessages = transcript.filter(t => t.role === 'assistant');
+
+    // Build conversation text for AI to summarize
+    const conversationText = transcript
+      .map(t => `${t.role.toUpperCase()}: ${t.text}`)
+      .join('\n\n');
+
+    try {
+      // Call Gemini API to generate summary
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `Please provide a warm, empathetic 2-3 sentence summary of the following conversation between a user and their voice companion. Focus on the key themes, emotions, and topics discussed:\n\n${conversationText}`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 200,
+            }
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const aiGeneratedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text ||
+        'A meaningful conversation was shared.';
+
+      return {
+        aiGeneratedSummary,
+        duration,
+        turnCount: transcript.length,
+        userMessageCount: userMessages.length,
+        aiMessageCount: aiMessages.length,
+        startTime: sessionStartTime || endTime,
+        endTime,
+      };
+    } catch (error) {
+      console.error('Failed to generate summary:', error);
+      // Return fallback summary
+      return {
+        aiGeneratedSummary: 'Thank you for sharing this time together. Your thoughts and feelings matter.',
+        duration,
+        turnCount: transcript.length,
+        userMessageCount: userMessages.length,
+        aiMessageCount: aiMessages.length,
+        startTime: sessionStartTime || endTime,
+        endTime,
+      };
+    }
+  };
+
+  const endSession = async () => {
+    disconnectGemini();
+    setIsMusicPlaying(false);
+
+    // Generate AI summary before moving to summary view
+    console.log('🎯 Generating conversation summary...');
+    let summary: SessionSummary;
+    try {
+      summary = await generateSummary();
+    } catch (error) {
+      console.error('Summary generation failed, using fallback:', error);
+      // Create fallback summary
+      const endTime = Date.now();
+      summary = {
+        aiGeneratedSummary: 'Thank you for sharing this time together. Your thoughts and feelings matter.',
+        duration: sessionStartTime ? Math.floor((endTime - sessionStartTime) / 1000) : 0,
+        turnCount: transcript.length,
+        userMessageCount: transcript.filter(t => t.role === 'user').length,
+        aiMessageCount: transcript.filter(t => t.role === 'assistant').length,
+        startTime: sessionStartTime || endTime,
+        endTime: endTime,
+      };
+    }
+    
+    setSessionSummary(summary);
+
+    // Always move to SUMMARY state (not REVIEW)
+    setAppState('SUMMARY');
   };
 
   // --- UI Components ---
@@ -209,20 +386,23 @@ export default function App() {
   const LandingView = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen text-center p-6">
       <h1 className="text-5xl md:text-7xl font-serif tracking-wide mb-4 text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-500 animate-pulse">
-        Memory Stardust
+        Voice Companion
       </h1>
       <p className="text-gray-400 max-w-lg mb-12 text-lg font-light">
-        A sanctuary for your moments. We turn your photos into stardust and help you keep the stories they hold.
+        A world built just for you:
+your rhythm, your feelings, your story.
       </p>
 
       {appState === 'LANDING' ? (
-        <label className="group cursor-pointer relative px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 transition-all rounded-full overflow-hidden backdrop-blur-sm">
+        <button
+          onClick={startChatSession}
+          className="group cursor-pointer relative px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 transition-all rounded-full overflow-hidden backdrop-blur-sm"
+        >
             <span className="relative z-10 flex items-center gap-2 text-white tracking-widest uppercase text-sm font-semibold">
-                <Sparkles size={16} /> Start a Memory
+                <Sparkles size={16} /> Have a chat
             </span>
-            <input type="file" accept="image/*" onChange={handleUpload} className="hidden" />
             <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-        </label>
+        </button>
       ) : null}
     </div>
   );
@@ -276,6 +456,14 @@ export default function App() {
                     onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
                     className="w-20 accent-white h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
                  />
+                 {/* NEW: Settings Button */}
+                 <button
+                   onClick={() => setShowSettings(true)}
+                   className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                   title="Background Settings"
+                 >
+                   <Settings size={18} />
+                 </button>
             </div>
         </div>
 
@@ -298,19 +486,6 @@ export default function App() {
                 </div>
             )}
 
-            {/* Voice Subtitle - AI's spoken text */}
-            {isConnected && (
-                <VoiceSubtitle
-                    text={currentText}
-                    isVisible={!!currentText}
-                    maxWidth="70%"
-                    opacity={0.6}
-                    fontSize="text-2xl md:text-3xl"
-                    position="bottom"
-                    typewriterEffect={true}
-                    typewriterSpeed={30}
-                />
-            )}
 
             {/* Connection Status Messages */}
             {isConnecting && (
@@ -320,15 +495,7 @@ export default function App() {
                 </div>
             )}
 
-            {/* Guide hint if idle and connected */}
-            {sessionState === 'IDLE' && transcript.length === 0 && !currentText && isConnected && !isConnecting && (
-                 <p className="text-white/40 font-light italic animate-pulse">Close your eyes and tell me about this moment...</p>
-            )}
 
-            {/* Waiting hint if not connected */}
-            {!isConnected && !isConnecting && !geminiError && (
-                 <p className="text-white/30 font-light italic">Tap the microphone when ready to begin</p>
-            )}
 
             {/* Show error if any */}
             {geminiError && (
@@ -372,6 +539,81 @@ export default function App() {
         </div>
     </div>
   );
+
+  // NEW: Summary View - Shows AI-generated summary before full transcript
+  const SummaryView = () => {
+    if (!sessionSummary) return null;
+
+    const formatDuration = (seconds: number): string => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      if (mins === 0) return `${secs}s`;
+      return `${mins}m ${secs}s`;
+    };
+
+    return (
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-2xl mx-auto animate-fade-in">
+        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Sparkles size={32} className="text-emerald-400" />
+            </div>
+            <h2 className="text-3xl font-serif text-white mb-2">Session Complete</h2>
+            <p className="text-white/50 text-sm">
+              {new Date(sessionSummary.endTime).toLocaleDateString()} • {new Date(sessionSummary.endTime).toLocaleTimeString()}
+            </p>
+          </div>
+
+          {/* AI Summary */}
+          <div className="mb-8 p-6 bg-white/5 rounded-xl border border-white/10">
+            <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">Conversation Summary</h3>
+            <p className="text-white/90 text-lg leading-relaxed font-light italic">
+              "{sessionSummary.aiGeneratedSummary}"
+            </p>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className="text-center p-4 bg-white/5 rounded-lg border border-white/10">
+              <div className="text-2xl font-semibold text-white mb-1">
+                {formatDuration(sessionSummary.duration)}
+              </div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">Duration</div>
+            </div>
+            <div className="text-center p-4 bg-white/5 rounded-lg border border-white/10">
+              <div className="text-2xl font-semibold text-white mb-1">
+                {sessionSummary.turnCount}
+              </div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">Messages</div>
+            </div>
+            <div className="text-center p-4 bg-white/5 rounded-lg border border-white/10">
+              <div className="text-2xl font-semibold text-white mb-1">
+                {sessionSummary.userMessageCount}/{sessionSummary.aiMessageCount}
+              </div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">You/AI</div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-4 justify-center pt-6 border-t border-white/5">
+            <button
+              onClick={() => setAppState('REVIEW')}
+              className="px-6 py-3 bg-white text-black hover:bg-gray-200 rounded-full text-sm font-semibold transition-all"
+            >
+              View Full Transcript
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 border border-white/20 text-white/80 hover:bg-white/5 rounded-full text-sm transition-all"
+            >
+              Start New Chat
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const ReviewView = () => (
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-3xl mx-auto">
@@ -424,9 +666,9 @@ export default function App() {
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden selection:bg-white/20">
 
-      {/* Background Visuals - Always active now */}
+      {/* Background Visuals - Always active now, uses default or custom photo */}
       <ParticleCanvas
-        imageUrl={appState === 'LANDING' ? null : photoData?.previewUrl || null}
+        imageUrl={appState === 'LANDING' ? null : getCurrentPhotoUrl()}
         isActive={true}
         audioLevel={audioLevel}
       />
@@ -452,7 +694,19 @@ export default function App() {
       {appState === 'LANDING' && <LandingView />}
       {appState === 'UPLOAD' && <UploadPreview />}
       {appState === 'SESSION' && <SessionView />}
+      {appState === 'SUMMARY' && <SummaryView />}
       {appState === 'REVIEW' && <ReviewView />}
+
+      {/* NEW: Settings Panel (accessible from session view) */}
+      <SettingsPanel
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        uploadedPhotos={uploadedPhotos}
+        selectedCustomPhotoId={selectedCustomPhotoId}
+        onPhotoUpload={handlePhotoUpload}
+        onPhotoSelect={handlePhotoSelect}
+        onPhotoDelete={handlePhotoDelete}
+      />
 
     </div>
   );
