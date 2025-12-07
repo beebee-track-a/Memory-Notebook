@@ -14,10 +14,16 @@ import { useGeminiLive } from './hooks/useGeminiLive';
 export default function App() {
   // Debug: Check API key on component mount
   useEffect(() => {
+    const apiKey =
+      import.meta.env.VITE_GEMINI_API_KEY ||
+      import.meta.env.VITE_API_KEY ||
+      import.meta.env.GEMINI_API_KEY ||
+      import.meta.env.API_KEY;
+
     console.log('🔍 App mounted. Checking environment:');
-    console.log('  - API_KEY exists:', !!process.env.API_KEY);
-    console.log('  - API_KEY preview:', process.env.API_KEY?.substring(0, 20) + '...' || 'MISSING');
-    console.log('  - All env vars:', Object.keys(process.env));
+    console.log('  - API_KEY exists:', !!apiKey);
+    console.log('  - API_KEY preview:', apiKey ? apiKey.substring(0, 20) + '...' : 'MISSING');
+    console.log('  - Vite env keys:', Object.keys(import.meta.env));
   }, []);
 
   // State
@@ -154,14 +160,20 @@ export default function App() {
 
     try {
       // Start connection
+      const apiKey =
+        import.meta.env.VITE_GEMINI_API_KEY ||
+        import.meta.env.VITE_API_KEY ||
+        import.meta.env.GEMINI_API_KEY ||
+        import.meta.env.API_KEY;
+
       console.log('🎤 Starting connection...', {
-        hasApiKey: !!process.env.API_KEY,
+        hasApiKey: !!apiKey,
         hasPhoto: !!photoData,
-        apiKey: process.env.API_KEY ? 'exists' : 'missing'
+        apiKey: apiKey ? 'exists' : 'missing'
       });
 
-      if (!process.env.API_KEY) {
-          console.error('❌ API Key missing in process.env');
+      if (!apiKey) {
+          console.error('❌ API Key missing in Vite environment');
           alert("API Key missing. Please check .env file and restart dev server.");
           return;
       }

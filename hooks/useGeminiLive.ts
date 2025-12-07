@@ -2,6 +2,12 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { createPcmBlob, decodeAudioData, base64ToUint8Array, PCM_SAMPLE_RATE, OUTPUT_SAMPLE_RATE } from '../services/audioStreamer';
 
+const GEMINI_API_KEY =
+  import.meta.env.VITE_GEMINI_API_KEY ||
+  import.meta.env.VITE_API_KEY ||
+  import.meta.env.GEMINI_API_KEY ||
+  import.meta.env.API_KEY;
+
 export interface UseGeminiLiveReturn {
   isConnected: boolean;
   isConnecting: boolean;
@@ -96,7 +102,7 @@ export const useGeminiLive = (
   }, []);
 
   const connect = useCallback(async (systemInstruction?: string) => {
-    if (!process.env.API_KEY) {
+    if (!GEMINI_API_KEY) {
       setError("API Key not found in environment variables.");
       return;
     }
@@ -156,8 +162,8 @@ export const useGeminiLive = (
       scriptProcessor.connect(inputCtx.destination);
 
       // 5. Initialize Gemini Client
-      console.log('🔑 Initializing Gemini with API key:', process.env.API_KEY?.substring(0, 20) + '...');
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      console.log('🔑 Initializing Gemini with API key:', GEMINI_API_KEY?.substring(0, 20) + '...');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
       const model = 'gemini-2.5-flash-native-audio-preview-09-2025';
       console.log('📡 Using model:', model);
 
