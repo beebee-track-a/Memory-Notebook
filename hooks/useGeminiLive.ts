@@ -44,6 +44,10 @@ export const useGeminiLive = (
   const streamRef = useRef<MediaStream | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
 
+  // Buffer for accumulating transcriptions
+  const userTranscriptBuffer = useRef<string>('');
+  const assistantTranscriptBuffer = useRef<string>('');
+
   // Cleanup function to stop all audio and close connections
   const cleanup = useCallback(() => {
     // Stop all playing sources
@@ -274,32 +278,36 @@ export const useGeminiLive = (
               nextStartTimeRef.current += audioBuffer.duration;
             }
 
-            // Handle transcription - check for both user and assistant transcriptions
+            // Handle transcription - accumulate partial transcriptions and send complete turns
             const serverContent = message.serverContent;
-            
-            // Log available transcription fields for debugging
-            if (serverContent) {
-              console.log('📝 Available transcription fields:', {
-                hasInputTranscription: !!serverContent.inputTranscription,
-                hasOutputTranscription: !!serverContent.outputTranscription,
-                inputText: serverContent.inputTranscription?.text,
-                outputText: serverContent.outputTranscription?.text,
-              });
-            }
-            
+
             // Handle user transcription (what the user said)
-            if (serverContent?.inputTranscription?.text && onTranscript) {
-              onTranscript(serverContent.inputTranscription.text, 'user');
-            }
-            
-            // Handle assistant transcription (what the AI said)
-            if (serverContent?.outputTranscription?.text && onTranscript) {
-              onTranscript(serverContent.outputTranscription.text, 'assistant');
+            if (serverContent?.inputTranscription?.text) {
+              userTranscriptBuffer.current += serverContent.inputTranscription.text;
             }
 
-            // Handle turn complete
-            if (message.serverContent?.turnComplete && onTurnComplete) {
-              onTurnComplete();
+            // Handle assistant transcription (what the AI said)
+            if (serverContent?.outputTranscription?.text) {
+              assistantTranscriptBuffer.current += serverContent.outputTranscription.text;
+            }
+
+            // Handle turn complete - send buffered transcriptions when turn is done
+            if (message.serverContent?.turnComplete) {
+              // Send user transcript if any
+              if (userTranscriptBuffer.current.trim() && onTranscript) {
+                onTranscript(userTranscriptBuffer.current.trim(), 'user');
+                userTranscriptBuffer.current = ''; // Clear buffer
+              }
+
+              // Send assistant transcript if any
+              if (assistantTranscriptBuffer.current.trim() && onTranscript) {
+                onTranscript(assistantTranscriptBuffer.current.trim(), 'assistant');
+                assistantTranscriptBuffer.current = ''; // Clear buffer
+              }
+
+              if (onTurnComplete) {
+                onTurnComplete();
+              }
             }
           },
           onclose: () => {

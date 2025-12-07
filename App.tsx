@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Mic, MicOff, Save, Share2, Sparkles, X, RotateCcw, Volume2, Volume1, Download, Settings } from 'lucide-react';
+import { Upload, Mic, MicOff, Save, Sparkles, X, Volume2, Volume1, Settings } from 'lucide-react';
 
 import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary } from './types';
 import { SYSTEM_INSTRUCTION, DEFAULT_PHOTO_URLS } from './constants';
@@ -164,18 +164,6 @@ export default function App() {
      }, 2500);
   };
 
-  const downloadMemory = () => {
-    const content = transcript.map(t => `[${new Date(t.timestamp).toLocaleTimeString()}] ${t.role.toUpperCase()}: ${t.text}`).join('\n\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `memory-${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   // NEW: Photo Management Handlers
   const handlePhotoUpload = (file: File) => {
@@ -298,6 +286,12 @@ export default function App() {
       .map(t => `${t.role.toUpperCase()}: ${t.text}`)
       .join('\n\n');
 
+    console.log('📋 Transcript to summarize:', {
+      turnCount: transcript.length,
+      conversationLength: conversationText.length,
+      preview: conversationText.substring(0, 200) + '...'
+    });
+
     // Retry logic with exponential backoff for rate limiting
     const maxRetries = 3;
     let lastError: Error | null = null;
@@ -313,7 +307,7 @@ export default function App() {
 
         // Call Gemini API to generate summary
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -325,7 +319,7 @@ export default function App() {
               }],
               generationConfig: {
                 temperature: 0.7,
-                maxOutputTokens: 200,
+                maxOutputTokens: 10000,
               }
             })
           }
@@ -338,12 +332,28 @@ export default function App() {
         }
 
         if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ API Error Response:', errorText);
           throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        const aiGeneratedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text ||
+        console.log('📥 API Response:', JSON.stringify(data, null, 2));
+
+        // Try multiple possible response structures
+        let aiGeneratedSummary =
+          data.candidates?.[0]?.content?.parts?.[0]?.text ||
+          data.candidates?.[0]?.output ||
+          data.candidates?.[0]?.text ||
+          data.text ||
           'A meaningful conversation was shared.';
+
+        console.log('📝 Extracted summary:', aiGeneratedSummary);
+        console.log('🔍 Response structure:', {
+          hasCandidates: !!data.candidates,
+          candidatesLength: data.candidates?.length,
+          firstCandidate: data.candidates?.[0],
+        });
 
         return {
           aiGeneratedSummary,
@@ -380,13 +390,17 @@ export default function App() {
     disconnectGemini();
     setIsMusicPlaying(false);
 
+    // Wait 3 seconds to let rate limits reset after Live API disconnection
+    console.log('⏳ Waiting 3 seconds before generating summary...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
     // Generate AI summary before moving to summary view
     console.log('🎯 Generating conversation summary...');
     let summary: SessionSummary;
     try {
       summary = await generateSummary();
     } catch (error) {
-      console.error('Summary generation failed, using fallback:', error);
+      console.error('❌ Summary generation failed, using fallback:', error);
       // Create fallback summary
       const endTime = Date.now();
       summary = {
@@ -399,7 +413,7 @@ export default function App() {
         endTime: endTime,
       };
     }
-    
+
     console.log('✅ Summary generated:', summary);
     setSessionSummary(summary);
 
@@ -634,14 +648,8 @@ export default function App() {
           {/* Actions */}
           <div className="flex gap-4 justify-center pt-6 border-t border-white/5">
             <button
-              onClick={() => setAppState('REVIEW')}
-              className="px-6 py-3 bg-white text-black hover:bg-gray-200 rounded-full text-sm font-semibold transition-all"
-            >
-              View Summary
-            </button>
-            <button
               onClick={() => window.location.reload()}
-              className="px-6 py-3 border border-white/20 text-white/80 hover:bg-white/5 rounded-full text-sm transition-all"
+              className="px-6 py-3 bg-white text-black hover:bg-gray-200 rounded-full text-sm font-semibold transition-all"
             >
               Start New Chat
             </button>
@@ -651,53 +659,6 @@ export default function App() {
     );
   };
 
-  const ReviewView = () => (
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-3xl mx-auto">
-          <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl">
-              <div className="flex gap-6 mb-8 items-start">
-                  <div className="w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 opacity-80">
-                      <img src={photoData?.previewUrl} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" alt="Memory" />
-                  </div>
-                  <div>
-                      <h2 className="text-2xl font-serif text-white mb-2">Memory Archived</h2>
-                      <p className="text-white/50 text-sm">
-                          {new Date().toLocaleDateString()} • {transcript.length} turns recorded
-                      </p>
-                  </div>
-              </div>
-
-              <div className="h-64 overflow-y-auto pr-4 mb-8 space-y-4 scrollbar-hide">
-                  {transcript.length > 0 ? transcript.map((turn, i) => (
-                      <div key={i} className={`flex ${turn.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
-                          <div className={`max-w-[80%] p-3 rounded-lg text-sm leading-relaxed ${
-                              turn.role === 'assistant'
-                              ? 'bg-white/5 text-gray-300'
-                              : 'bg-white/10 text-white'
-                          }`}>
-                              {turn.text || "(Audio segment)"}
-                          </div>
-                      </div>
-                  )) : (
-                      <p className="text-center text-white/30 italic">No conversation recorded.</p>
-                  )}
-              </div>
-
-              <div className="flex gap-4 justify-between pt-6 border-t border-white/5">
-                  <button onClick={() => window.location.reload()} className="flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors">
-                      <RotateCcw size={16} /> Start New
-                  </button>
-                  <div className="flex gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-full text-sm transition-all border border-white/10">
-                        <Share2 size={16} /> Share
-                    </button>
-                    <button onClick={downloadMemory} className="flex items-center gap-2 px-4 py-2 bg-white text-black hover:bg-gray-200 rounded-full text-sm font-semibold transition-all">
-                        <Download size={16} /> Download
-                    </button>
-                  </div>
-              </div>
-          </div>
-      </div>
-  );
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden selection:bg-white/20">
@@ -721,7 +682,7 @@ export default function App() {
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
               <div className="text-center">
                   <div className="w-12 h-12 border-t-2 border-white rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-white/60 font-serif tracking-widest animate-pulse">CRYSTALLIZING MEMORY...</p>
+                  <p className="text-white/60 font-serif tracking-widest animate-pulse">STARTING THE CHAT...</p>
               </div>
           </div>
       )}
@@ -731,7 +692,6 @@ export default function App() {
       {appState === 'UPLOAD' && <UploadPreview />}
       {appState === 'SESSION' && <SessionView />}
       {appState === 'SUMMARY' && <SummaryView />}
-      {appState === 'REVIEW' && <ReviewView />}
 
       {/* NEW: Settings Panel (accessible from session view) */}
       <SettingsPanel
