@@ -119,9 +119,11 @@ export default function SettingsPanel({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        e.preventDefault();
                         onPhotoDelete(photo.id);
                       }}
-                      className="absolute bottom-2 right-2 p-1.5 bg-red-500/80 hover:bg-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-all"
+                      className="absolute bottom-2 right-2 p-1.5 bg-red-500/90 hover:bg-red-500 rounded-full opacity-100 transition-all z-10"
+                      title="Delete photo"
                     >
                       <Trash2 size={12} className="text-white" />
                     </button>

@@ -21,6 +21,9 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, aud
   // Animation State
   const mouseRef = useRef({ x: 0, y: 0 });
   const targetRotationRef = useRef({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const manualRotationRef = useRef({ x: 0, y: 0 });
 
   // Keep audio level current without restarting the loop
   useEffect(() => {
@@ -231,9 +234,9 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, aud
 
         // Orbit Logic
         if (particlesRef.current) {
-          // Rotate the entire cloud gently
-          particlesRef.current.rotation.y = time * 0.1 + targetRotationRef.current.x * 0.5;
-          particlesRef.current.rotation.x = targetRotationRef.current.y * 0.2;
+          // Apply manual drag rotation + smooth mouse hover rotation + gentle time-based rotation
+          particlesRef.current.rotation.y = time * 0.1 + targetRotationRef.current.x * 0.5 + manualRotationRef.current.x;
+          particlesRef.current.rotation.x = targetRotationRef.current.y * 0.2 + manualRotationRef.current.y;
 
           // Audio Reactivity (Breathing Scale)
           // Smoothly interpolate scale for organic feel
@@ -257,19 +260,92 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, aud
     return () => cancelAnimationFrame(frameIdRef.current);
   }, [isActive]);
 
+  // Global mouse event handlers for dragging (only move/up are global, down is local to canvas)
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (isDraggingRef.current) {
+        // Calculate rotation based on drag distance
+        const deltaX = (e.clientX - dragStartRef.current.x) * 0.01; // Sensitivity
+        const deltaY = (e.clientY - dragStartRef.current.y) * 0.01;
+        
+        // Update manual rotation (in radians)
+        manualRotationRef.current.x += deltaX;
+        manualRotationRef.current.y -= deltaY; // Invert Y for natural feel
+        
+        // Update drag start for next frame
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+      } else {
+        // Normalize mouse position -1 to 1 for hover effect
+        const x = (e.clientX / window.innerWidth) * 2 - 1;
+        const y = -(e.clientY / window.innerHeight) * 2 + 1;
+        mouseRef.current = { x, y };
+      }
+    };
+
+    const handleGlobalMouseUp = () => {
+      isDraggingRef.current = false;
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isActive]);
+
   const handleMouseMove = (e: React.MouseEvent) => {
-    // Normalize mouse position -1 to 1
-    const x = (e.clientX / window.innerWidth) * 2 - 1;
-    const y = -(e.clientY / window.innerHeight) * 2 + 1;
-    mouseRef.current = { x, y };
+    if (!isDraggingRef.current) {
+      // Normalize mouse position -1 to 1 for hover effect
+      const x = (e.clientX / window.innerWidth) * 2 - 1;
+      const y = -(e.clientY / window.innerHeight) * 2 + 1;
+      mouseRef.current = { x, y };
+    }
   };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only start dragging when clicking directly on the canvas div (not on child elements or UI)
+    // Check if the click target is the canvas div itself or the Three.js canvas element
+    const target = e.target as HTMLElement;
+    if (target === e.currentTarget || target.tagName === 'CANVAS') {
+      e.preventDefault();
+      e.stopPropagation();
+      isDraggingRef.current = true;
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseLeave = () => {
+    // Don't stop dragging on mouse leave - allow dragging outside the div
+  };
+
+  // Update cursor style based on dragging state
+  useEffect(() => {
+    if (!containerRef.current || !isActive) return;
+    const updateCursor = () => {
+      if (containerRef.current) {
+        containerRef.current.style.cursor = isDraggingRef.current ? 'grabbing' : 'grab';
+      }
+    };
+    updateCursor();
+    const interval = setInterval(updateCursor, 100);
+    return () => clearInterval(interval);
+  }, [isActive]);
 
   return (
     <div
       ref={containerRef}
       onMouseMove={handleMouseMove}
-      className={`fixed inset-0 z-0 pointer-events-none transition-opacity duration-1000 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-      style={{ width: '100vw', height: '100vh' }}
+      onMouseDown={handleMouseDown}
+      onMouseLeave={handleMouseLeave}
+      className={`fixed inset-0 z-0 ${isActive ? '' : 'pointer-events-none'} transition-opacity duration-1000 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+      style={{ 
+        width: '100vw', 
+        height: '100vh'
+      }}
     />
   );
 };

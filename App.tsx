@@ -388,9 +388,8 @@ export default function App() {
       <h1 className="text-5xl md:text-7xl font-serif tracking-wide mb-4 text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-500 animate-pulse">
         Voice Companion
       </h1>
-      <p className="text-gray-400 max-w-lg mb-12 text-lg font-light">
-        A world built just for you:
-your rhythm, your feelings, your story.
+      <p className="text-gray-400 max-w-2xl mb-12 text-lg font-light whitespace-nowrap">
+        A world built just for you: your rhythm, your feelings, your story
       </p>
 
       {appState === 'LANDING' ? (
@@ -534,7 +533,7 @@ your rhythm, your feelings, your story.
                 onClick={endSession}
                 className="text-xs text-white/30 hover:text-white transition-colors border-b border-transparent hover:border-white"
             >
-                End Session & Save Memory
+                End Session & Save Summary
             </button>
         </div>
     </div>
