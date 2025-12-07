@@ -298,57 +298,82 @@ export default function App() {
       .map(t => `${t.role.toUpperCase()}: ${t.text}`)
       .join('\n\n');
 
-    try {
-      // Call Gemini API to generate summary
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `Please provide a warm, empathetic 2-3 sentence summary of the following conversation between a user and their voice companion. Focus on the key themes, emotions, and topics discussed:\n\n${conversationText}`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 200,
-            }
-          })
+    // Retry logic with exponential backoff for rate limiting
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Wait before retrying (exponential backoff)
+        if (attempt > 0) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 seconds
+          console.log(`⏳ Retrying summary generation (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
-      );
 
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.statusText}`);
+        // Call Gemini API to generate summary
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: `Please provide a warm, empathetic 2-3 sentence summary of the following conversation between a user and their voice companion. Focus on the key themes, emotions, and topics discussed:\n\n${conversationText}`
+                }]
+              }],
+              generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 200,
+              }
+            })
+          }
+        );
+
+        if (response.status === 429) {
+          // Rate limited - will retry
+          lastError = new Error(`Rate limited (429). Attempt ${attempt + 1}/${maxRetries}`);
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const aiGeneratedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text ||
+          'A meaningful conversation was shared.';
+
+        return {
+          aiGeneratedSummary,
+          duration,
+          turnCount: transcript.length,
+          userMessageCount: userMessages.length,
+          aiMessageCount: aiMessages.length,
+          startTime: sessionStartTime || endTime,
+          endTime,
+        };
+      } catch (error: any) {
+        lastError = error;
+        // If it's not a 429 error, don't retry
+        if (error.message && !error.message.includes('429')) {
+          break;
+        }
       }
-
-      const data = await response.json();
-      const aiGeneratedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text ||
-        'A meaningful conversation was shared.';
-
-      return {
-        aiGeneratedSummary,
-        duration,
-        turnCount: transcript.length,
-        userMessageCount: userMessages.length,
-        aiMessageCount: aiMessages.length,
-        startTime: sessionStartTime || endTime,
-        endTime,
-      };
-    } catch (error) {
-      console.error('Failed to generate summary:', error);
-      // Return fallback summary
-      return {
-        aiGeneratedSummary: 'Thank you for sharing this time together. Your thoughts and feelings matter.',
-        duration,
-        turnCount: transcript.length,
-        userMessageCount: userMessages.length,
-        aiMessageCount: aiMessages.length,
-        startTime: sessionStartTime || endTime,
-        endTime,
-      };
     }
+
+    // All retries failed - return fallback summary
+    console.error('Failed to generate summary after retries:', lastError);
+    return {
+      aiGeneratedSummary: 'Thank you for sharing this time together. Your thoughts and feelings matter.',
+      duration,
+      turnCount: transcript.length,
+      userMessageCount: userMessages.length,
+      aiMessageCount: aiMessages.length,
+      startTime: sessionStartTime || endTime,
+      endTime,
+    };
   };
 
   const endSession = async () => {
@@ -375,9 +400,11 @@ export default function App() {
       };
     }
     
+    console.log('✅ Summary generated:', summary);
     setSessionSummary(summary);
 
     // Always move to SUMMARY state (not REVIEW)
+    console.log('🔄 Setting app state to SUMMARY');
     setAppState('SUMMARY');
   };
 
@@ -541,7 +568,17 @@ export default function App() {
 
   // NEW: Summary View - Shows AI-generated summary before full transcript
   const SummaryView = () => {
-    if (!sessionSummary) return null;
+    console.log('📄 SummaryView rendered, sessionSummary:', sessionSummary);
+    if (!sessionSummary) {
+      // Show loading or fallback if summary not available
+      return (
+        <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-2xl mx-auto">
+          <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl text-center">
+            <p className="text-white/60">Loading summary...</p>
+          </div>
+        </div>
+      );
+    }
 
     const formatDuration = (seconds: number): string => {
       const mins = Math.floor(seconds / 60);
@@ -600,7 +637,7 @@ export default function App() {
               onClick={() => setAppState('REVIEW')}
               className="px-6 py-3 bg-white text-black hover:bg-gray-200 rounded-full text-sm font-semibold transition-all"
             >
-              View Full Transcript
+              View Summary
             </button>
             <button
               onClick={() => window.location.reload()}

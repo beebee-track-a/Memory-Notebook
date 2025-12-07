@@ -238,13 +238,9 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, aud
           particlesRef.current.rotation.y = time * 0.1 + targetRotationRef.current.x * 0.5 + manualRotationRef.current.x;
           particlesRef.current.rotation.x = targetRotationRef.current.y * 0.2 + manualRotationRef.current.y;
 
-          // Audio Reactivity (Breathing Scale)
-          // Smoothly interpolate scale for organic feel
-          const targetScale = 1 + (audioLevelRef.current * 0.3);
-          const currentScale = particlesRef.current.scale.x;
-          const newScale = currentScale + (targetScale - currentScale) * 0.1;
-
-          particlesRef.current.scale.set(newScale, newScale, newScale);
+          // Audio Reactivity removed - waveform visualization handles audio feedback
+          // Keep scale constant
+          particlesRef.current.scale.set(1, 1, 1);
         }
 
         // Camera Drift
