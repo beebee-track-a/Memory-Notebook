@@ -47,7 +47,7 @@ export const AMBIENT_MUSIC_URL = "https://cdn.pixabay.com/audio/2022/08/02/audio
 // These are used when user hasn't uploaded their own custom photo
 export const DEFAULT_PHOTO_URLS = [
   // Abstract gradients and colors
-  'https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=800&q=80', // Purple/pink gradient
+  'https://www.alleycat.org/wp-content/uploads/2019/03/FELV-cat.jpg', // Purple/pink gradient
   'https://images.unsplash.com/photo-1558591710-4b4a1ae0f04d?w=800&q=80', // Blue/orange gradient
   'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800&q=80', // Soft pastel gradient
 
