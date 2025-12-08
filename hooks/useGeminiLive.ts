@@ -205,7 +205,7 @@ export const useGeminiLive = (
               sessionPromiseRef.current.then(session => {
                 console.log('👋 Sending opening greeting...');
                 session.sendRealtimeInput({ 
-                  text: "Say: 'Hey, I'm your Gemini voice assistant, here only for you. When you're ready to speak, I'll be here—listening, and feeling the echoes of your heart with you.' Keep it warm, brief, and inviting." 
+                  text: "Say: 'Hey, it's Hobbi, here only for you. When you're ready to speak, I'll be here—listening, and feeling the echoes of your heart with you.' Keep it warm, brief, and inviting." 
                 });
               }).catch(err => {
                 console.error('❌ Failed to send opening greeting:', err);
