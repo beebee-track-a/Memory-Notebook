@@ -427,10 +427,10 @@ export default function App() {
   const LandingView = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen text-center p-6">
       <h1 className="text-5xl md:text-7xl font-serif tracking-wide mb-4 text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-500 animate-pulse">
-        Voice Companion
+        Hobbi
       </h1>
       <p className="text-gray-400 max-w-2xl mb-12 text-lg font-light whitespace-nowrap">
-        A world built just for you: your rhythm, your feelings, your story
+       A world built for you with Hobbi — where imagination becomes true companionship
       </p>
 
       {appState === 'LANDING' ? (
