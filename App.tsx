@@ -7,7 +7,6 @@ import ParticleCanvas from './components/ParticleCanvas';
 import AmbiencePlayer from './components/AmbiencePlayer';
 import VoiceSubtitle from './components/VoiceSubtitle';
 import MicButton from './components/MicButton';
-import VoiceWaveform from './components/VoiceWaveform';
 import VoiceStatusIndicator, { VoiceConnectionStatus } from './components/VoiceStatusIndicator';
 import SettingsPanel from './components/SettingsPanel';
 import { useGeminiLive } from './hooks/useGeminiLive';
@@ -43,6 +42,12 @@ export default function App() {
 
   // Voice UI States
   const [voiceStatus, setVoiceStatus] = useState<VoiceConnectionStatus>('idle');
+
+  // Subtitle States
+  const [subtitleText, setSubtitleText] = useState<string>('');
+  const [subtitleRole, setSubtitleRole] = useState<'user' | 'assistant' | null>(null);
+  const [showSubtitle, setShowSubtitle] = useState<boolean>(false);
+  const subtitleUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // NEW: Photo Management (for background particle effects)
   const [defaultPhotoIndex, setDefaultPhotoIndex] = useState(0); // Which default photo to use
@@ -82,7 +87,31 @@ export default function App() {
       setSessionState('IDLE');
     },
     // setAudioLevel callback
-    setAudioLevel
+    setAudioLevel,
+    // onPartialTranscript callback - for real-time subtitles (throttled to reduce flashing)
+    (text: string, role: 'user' | 'assistant') => {
+      if (text.trim()) {
+        // Clear any pending update
+        if (subtitleUpdateTimeoutRef.current) {
+          clearTimeout(subtitleUpdateTimeoutRef.current);
+        }
+
+        // Throttle updates to max 10 per second (100ms intervals) to prevent flashing
+        subtitleUpdateTimeoutRef.current = setTimeout(() => {
+          setSubtitleText(text.trim());
+          setSubtitleRole(role);
+          setShowSubtitle(true);
+        }, 100);
+      } else {
+        // Clear subtitle when text is empty (immediate, no throttle)
+        if (subtitleUpdateTimeoutRef.current) {
+          clearTimeout(subtitleUpdateTimeoutRef.current);
+        }
+        setShowSubtitle(false);
+        setSubtitleText('');
+        setSubtitleRole(null);
+      }
+    }
   );
 
   // Update voice status based on connection state
@@ -109,6 +138,29 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [audioLevel, isConnected]);
+
+  // Auto-clear subtitles after period of inactivity
+  useEffect(() => {
+    if (!showSubtitle || !subtitleText) return;
+
+    // Clear subtitle after 5 seconds of no updates
+    const clearTimer = setTimeout(() => {
+      setShowSubtitle(false);
+      setSubtitleText('');
+      setSubtitleRole(null);
+    }, 5000);
+
+    return () => clearTimeout(clearTimer);
+  }, [subtitleText, showSubtitle]);
+
+  // Cleanup throttle timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (subtitleUpdateTimeoutRef.current) {
+        clearTimeout(subtitleUpdateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // --- Helpers ---
 
@@ -510,22 +562,17 @@ export default function App() {
         {/* Central Visual Area */}
         <div className="flex-1 flex flex-col items-center justify-center relative p-6">
 
-            {/* Voice Waveform - Shows above subtitle when speaking */}
-            {sessionState === 'SPEAKING' && isConnected && (
-                <div className="absolute top-1/3 left-1/2 -translate-x-1/2 z-20">
-                    <VoiceWaveform
-                        audioLevel={audioLevel}
-                        isActive={true}
-                        type="bars"
-                        color="rgba(255, 255, 255, 0.8)"
-                        barCount={40}
-                        smoothing={0.7}
-                        height={60}
-                        width="300px"
-                    />
-                </div>
-            )}
-
+            {/* Real-time Subtitles - Centered to avoid overlap with mic button area */}
+            <VoiceSubtitle
+                text={subtitleText}
+                isVisible={showSubtitle && isConnected}
+                role={subtitleRole}
+                position="center"
+                typewriterEffect={false} // Disable typewriter for real-time updates
+                maxWidth="80%"
+                opacity={0.7}
+                fontSize="text-xl md:text-2xl"
+            />
 
             {/* Connection Status Messages */}
             {isConnecting && (
@@ -554,16 +601,16 @@ export default function App() {
 
         {/* Bottom Controls */}
         <div className="p-8 flex flex-col items-center gap-6 z-20">
-            <div className="flex items-center gap-6">
-                <MicButton
-                    isRecording={isConnected}
-                    onClick={handleMicClick}
-                    size={72}
-                    glowColor={isConnected ? "rgb(34, 197, 94)" : "rgb(99, 102, 241)"}
-                    breathingDuration={2.5}
-                    disabled={isConnecting}
-                />
-            </div>
+            {/* Mic Button */}
+            <MicButton
+                isRecording={isConnected}
+                onClick={handleMicClick}
+                size={72}
+                glowColor={isConnected ? "rgb(34, 197, 94)" : "rgb(99, 102, 241)"}
+                breathingDuration={2.5}
+                disabled={isConnecting}
+            />
+
             {!isConnected && !isConnecting && (
                 <p className="text-sm text-white/50 font-light">Tap to start your conversation</p>
             )}
