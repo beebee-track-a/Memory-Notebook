@@ -17,6 +17,7 @@ export interface UseGeminiLiveReturn {
     output: AnalyserNode | null;
   };
   onTranscript?: (text: string, role: 'user' | 'assistant') => void;
+  onPartialTranscript?: (text: string, role: 'user' | 'assistant') => void;
   onTurnComplete?: () => void;
   setAudioLevel?: (level: number) => void;
 }
@@ -24,7 +25,8 @@ export interface UseGeminiLiveReturn {
 export const useGeminiLive = (
   onTranscript?: (text: string, role: 'user' | 'assistant') => void,
   onTurnComplete?: () => void,
-  setAudioLevel?: (level: number) => void
+  setAudioLevel?: (level: number) => void,
+  onPartialTranscript?: (text: string, role: 'user' | 'assistant') => void
 ): UseGeminiLiveReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -297,11 +299,19 @@ export const useGeminiLive = (
             // Handle user transcription (what the user said)
             if (serverContent?.inputTranscription?.text) {
               userTranscriptBuffer.current += serverContent.inputTranscription.text;
+              // Fire partial transcript callback for real-time subtitles
+              if (onPartialTranscript) {
+                onPartialTranscript(userTranscriptBuffer.current, 'user');
+              }
             }
 
             // Handle assistant transcription (what the AI said)
             if (serverContent?.outputTranscription?.text) {
               assistantTranscriptBuffer.current += serverContent.outputTranscription.text;
+              // Fire partial transcript callback for real-time subtitles
+              if (onPartialTranscript) {
+                onPartialTranscript(assistantTranscriptBuffer.current, 'assistant');
+              }
             }
 
             // Handle turn complete - send buffered transcriptions when turn is done
@@ -316,6 +326,11 @@ export const useGeminiLive = (
               if (assistantTranscriptBuffer.current.trim() && onTranscript) {
                 onTranscript(assistantTranscriptBuffer.current.trim(), 'assistant');
                 assistantTranscriptBuffer.current = ''; // Clear buffer
+              }
+
+              // Clear partial transcripts for subtitles
+              if (onPartialTranscript) {
+                onPartialTranscript('', 'user'); // Clear subtitle
               }
 
               if (onTurnComplete) {
@@ -369,7 +384,7 @@ export const useGeminiLive = (
       setError(errorMessage);
       cleanup();
     }
-  }, [cleanup, onTranscript, onTurnComplete, setAudioLevel]);
+  }, [cleanup, onTranscript, onTurnComplete, setAudioLevel, onPartialTranscript]);
 
   const disconnect = useCallback(() => {
     cleanup();
