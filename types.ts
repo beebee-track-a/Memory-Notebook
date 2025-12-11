@@ -38,6 +38,19 @@ export interface SessionSummary {
   endTime: number;              // Session end timestamp
 }
 
+// Memory Garden Types
+export type HistoryViewState = 'HIDDEN' | 'CALENDAR' | 'CAROUSEL';
+
+export interface HistoryEntry {
+  id: string;
+  date: string;           // YYYY-MM-DD format
+  title: string;
+  summary: string;
+  imageUrl: string;
+  timestamp: string;      // "11:51 AM" format
+  tags: string[];
+}
+
 // Session data stored in Firebase sessions/{sessionId}
 export interface SessionData {
   id?: string;                  // Document ID (auto-generated)
