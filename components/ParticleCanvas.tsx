@@ -5,9 +5,10 @@ interface ParticleCanvasProps {
   imageUrl: string | null;
   isActive: boolean;
   audioLevel: number; // 0 to 1
+  audioRef?: React.MutableRefObject<number>; // Optimization: direct ref access to avoid re-renders
 }
 
-const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, audioLevel }) => {
+const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, audioLevel, audioRef }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Three.js References
@@ -25,7 +26,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, aud
   const dragStartRef = useRef({ x: 0, y: 0 });
   const manualRotationRef = useRef({ x: 0, y: 0 });
 
-  // Keep audio level current without restarting the loop
+  // Keep audio level current without restarting the loop (Fallback if no audioRef provided)
   useEffect(() => {
     audioLevelRef.current = audioLevel;
   }, [audioLevel]);
@@ -265,11 +266,11 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, aud
         // Calculate rotation based on drag distance
         const deltaX = (e.clientX - dragStartRef.current.x) * 0.01; // Sensitivity
         const deltaY = (e.clientY - dragStartRef.current.y) * 0.01;
-        
+
         // Update manual rotation (in radians)
         manualRotationRef.current.x += deltaX;
         manualRotationRef.current.y -= deltaY; // Invert Y for natural feel
-        
+
         // Update drag start for next frame
         dragStartRef.current = { x: e.clientX, y: e.clientY };
       } else {
@@ -338,12 +339,23 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageUrl, isActive, aud
       onMouseDown={handleMouseDown}
       onMouseLeave={handleMouseLeave}
       className={`fixed inset-0 z-0 ${isActive ? '' : 'pointer-events-none'} transition-opacity duration-1000 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-      style={{ 
-        width: '100vw', 
+      style={{
+        width: '100vw',
         height: '100vh'
       }}
     />
   );
 };
 
-export default ParticleCanvas;
+export default React.memo(ParticleCanvas, (prevProps, nextProps) => {
+  // Custom comparison function for granular control
+  return (
+    prevProps.imageUrl === nextProps.imageUrl &&
+    prevProps.isActive === nextProps.isActive &&
+    // If audioRef is provided, we IGNORE audioLevel changes completely for render purposes
+    // because the canvas reads directly from the ref.
+    (prevProps.audioRef && nextProps.audioRef
+      ? true
+      : Math.abs(prevProps.audioLevel - nextProps.audioLevel) < 0.01)
+  );
+});

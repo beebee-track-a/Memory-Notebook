@@ -49,6 +49,9 @@ export const useGeminiLive = (
   // Buffer for accumulating transcriptions
   const userTranscriptBuffer = useRef<string>('');
   const assistantTranscriptBuffer = useRef<string>('');
+  // Throttle assistant partials to avoid UI flicker
+  const lastAssistantPartialRef = useRef<string>('');
+  const lastAssistantEmitRef = useRef<number>(0);
 
   // Cleanup function to stop all audio and close connections
   const cleanup = useCallback(() => {
@@ -106,12 +109,12 @@ export const useGeminiLive = (
   }, []);
 
   const connect = useCallback(async (systemInstruction?: string) => {
-    const apiKey = 
+    const apiKey =
       import.meta.env.VITE_GEMINI_API_KEY ||
       import.meta.env.VITE_API_KEY ||
       import.meta.env.GEMINI_API_KEY ||
       import.meta.env.API_KEY;
-    
+
     if (!apiKey) {
       setError("API Key not found in environment variables.");
       return;
@@ -167,7 +170,7 @@ export const useGeminiLive = (
       const gainNode = inputCtx.createGain();
       gainNode.gain.value = 10.0; // Boost input by 10x (20dB) for better sensitivity
       gainNodeRef.current = gainNode;
-      
+
       const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
       scriptProcessorRef.current = scriptProcessor;
 
@@ -206,8 +209,8 @@ export const useGeminiLive = (
             if (sessionPromiseRef.current) {
               sessionPromiseRef.current.then(session => {
                 console.log('👋 Sending opening greeting...');
-                session.sendRealtimeInput({ 
-                  text: "Say: 'Hey, it's Hobbi, here only for you. When you're ready to speak, I'll be here—listening, and feeling the echoes of your heart with you.' Keep it warm, brief, and inviting." 
+                session.sendRealtimeInput({
+                  text: "Say: 'Hey, it's Hobbi, here only for you. When you're ready to speak, I'll be here—listening, and feeling the echoes of your heart with you.' Keep it warm, brief, and inviting."
                 });
               }).catch(err => {
                 console.error('❌ Failed to send opening greeting:', err);
@@ -218,7 +221,7 @@ export const useGeminiLive = (
             scriptProcessor.onaudioprocess = (e) => {
               // Get audio data from the gain-boosted input
               const inputData = e.inputBuffer.getChannelData(0);
-              
+
               // Additional amplification in software (multiply by 3x)
               const amplifiedData = new Float32Array(inputData.length);
               for (let i = 0; i < inputData.length; i++) {
@@ -308,9 +311,19 @@ export const useGeminiLive = (
             // Handle assistant transcription (what the AI said)
             if (serverContent?.outputTranscription?.text) {
               assistantTranscriptBuffer.current += serverContent.outputTranscription.text;
-              // Fire partial transcript callback for real-time subtitles
-              if (onPartialTranscript) {
-                onPartialTranscript(assistantTranscriptBuffer.current, 'assistant');
+              const next = assistantTranscriptBuffer.current.trim();
+              const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+              // Fire partial transcript callback for real-time subtitles with throttle/de-dupe
+              if (
+                onPartialTranscript &&
+                next &&
+                next !== lastAssistantPartialRef.current &&
+                now - lastAssistantEmitRef.current > 120
+              ) {
+                lastAssistantPartialRef.current = next;
+                lastAssistantEmitRef.current = now;
+                onPartialTranscript(next, 'assistant');
               }
             }
 
@@ -326,10 +339,13 @@ export const useGeminiLive = (
               if (assistantTranscriptBuffer.current.trim() && onTranscript) {
                 onTranscript(assistantTranscriptBuffer.current.trim(), 'assistant');
                 assistantTranscriptBuffer.current = ''; // Clear buffer
+                lastAssistantPartialRef.current = '';
+                lastAssistantEmitRef.current = 0;
               }
 
               // Clear partial transcripts for subtitles
               if (onPartialTranscript) {
+                onPartialTranscript('', 'assistant'); // Clear assistant subtitle
                 onPartialTranscript('', 'user'); // Clear subtitle
               }
 
