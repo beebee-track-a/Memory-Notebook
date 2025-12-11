@@ -9,7 +9,10 @@ import VoiceSubtitle from './components/VoiceSubtitle';
 import MicButton from './components/MicButton';
 import VoiceStatusIndicator, { VoiceConnectionStatus } from './components/VoiceStatusIndicator';
 import SettingsPanel from './components/SettingsPanel';
+import LoginModal from './components/LoginModal';
 import { useGeminiLive } from './hooks/useGeminiLive';
+import { useAuth } from './hooks/useAuth';
+import { saveSession } from './services/firebaseAPI';
 
 export default function App() {
   // Debug: Check API key on component mount
@@ -58,6 +61,13 @@ export default function App() {
   // NEW: Session Tracking (for summary generation)
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+
+  // Firebase Authentication
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Use the Gemini Live hook
   const {
@@ -438,9 +448,24 @@ export default function App() {
     };
   };
 
+  const handleEndSessionClick = () => {
+    // Check authentication BEFORE allowing summary generation
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing login modal');
+      setShowLoginModal(true);
+      return;
+    }
+
+    // User is authenticated, proceed with ending session
+    endSession();
+  };
+
   const endSession = async () => {
     disconnectGemini();
     setIsMusicPlaying(false);
+
+    // Show loading UI for summary generation
+    setIsGeneratingSummary(true);
 
     // Wait 3 seconds to let rate limits reset after Live API disconnection
     console.log('⏳ Waiting 3 seconds before generating summary...');
@@ -468,10 +493,57 @@ export default function App() {
 
     console.log('✅ Summary generated:', summary);
     setSessionSummary(summary);
+    setIsGeneratingSummary(false);
 
     // Always move to SUMMARY state (not REVIEW)
     console.log('🔄 Setting app state to SUMMARY');
     setAppState('SUMMARY');
+  };
+
+  // --- Save Session Handler ---
+
+  const handleSaveSession = async () => {
+    if (!sessionSummary) {
+      console.error('❌ No session summary to save');
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing login modal');
+      setShowLoginModal(true);
+      return;
+    }
+
+    // Save session to Firebase
+    setIsSaving(true);
+    try {
+      const sessionId = await saveSession({
+        summary: sessionSummary,
+        transcript: transcript,
+      });
+      console.log('✅ Session saved successfully:', sessionId);
+      setSaveSuccess(true);
+      // Reset after 2 seconds and reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (error) {
+      console.error('❌ Failed to save session:', error);
+      alert('Failed to save session. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLoginSuccess = async () => {
+    console.log('✅ User logged in successfully, generating summary...');
+    // Close modal and proceed with ending session
+    setShowLoginModal(false);
+    // Wait a brief moment for auth state to update
+    setTimeout(() => {
+      endSession();
+    }, 500);
   };
 
   // --- UI Components ---
@@ -618,7 +690,7 @@ export default function App() {
                 <p className="text-sm text-emerald-400 font-light">● Live - Speak freely</p>
             )}
             <button
-                onClick={endSession}
+                onClick={handleEndSessionClick}
                 className="text-xs text-white/30 hover:text-white transition-colors border-b border-transparent hover:border-white"
             >
                 End Session & Save Summary
@@ -649,8 +721,8 @@ export default function App() {
     };
 
     return (
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-2xl mx-auto animate-fade-in">
-        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl">
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 py-12 max-w-2xl mx-auto animate-fade-in">
+        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl my-8">
           {/* Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -694,12 +766,21 @@ export default function App() {
 
           {/* Actions */}
           <div className="flex gap-4 justify-center pt-6 border-t border-white/5">
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-3 bg-white text-black hover:bg-gray-200 rounded-full text-sm font-semibold transition-all"
-            >
-              Start New Chat
-            </button>
+            {saveSuccess ? (
+              <div className="px-6 py-3 bg-emerald-500 text-white rounded-full text-sm font-semibold flex items-center gap-2">
+                <Sparkles size={16} />
+                Saved Successfully!
+              </div>
+            ) : (
+              <button
+                onClick={handleSaveSession}
+                disabled={isSaving}
+                className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full text-sm font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save size={16} />
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -708,7 +789,7 @@ export default function App() {
 
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden selection:bg-white/20">
+    <div className={`relative w-full h-screen bg-black selection:bg-white/20 ${appState === 'SUMMARY' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
       {/* Background Visuals - Always active now, uses default or custom photo */}
       <ParticleCanvas
@@ -734,6 +815,17 @@ export default function App() {
           </div>
       )}
 
+      {/* Summary Generation Loading Overlay */}
+      {isGeneratingSummary && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+              <div className="text-center space-y-4">
+                  <div className="w-12 h-12 border-t-2 border-emerald-400 rounded-full animate-spin mx-auto" />
+                  <p className="text-white/60 font-serif tracking-widest animate-pulse">GENERATING SUMMARY...</p>
+                  <p className="text-white/40 text-sm font-light">This may take a moment</p>
+              </div>
+          </div>
+      )}
+
       {/* Main Views */}
       {appState === 'LANDING' && <LandingView />}
       {appState === 'UPLOAD' && <UploadPreview />}
@@ -749,6 +841,13 @@ export default function App() {
         onPhotoUpload={handlePhotoUpload}
         onPhotoSelect={handlePhotoSelect}
         onPhotoDelete={handlePhotoDelete}
+      />
+
+      {/* Login Modal */}
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        onLoginSuccess={handleLoginSuccess}
       />
 
     </div>
