@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Mic, MicOff, Save, Sparkles, X, Volume2, Volume1, Settings } from 'lucide-react';
+import { Upload, Mic, MicOff, Save, Sparkles, X, Volume2, Volume1, Settings, LogOut } from 'lucide-react';
 
 import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary } from './types';
 import { SYSTEM_INSTRUCTION, DEFAULT_PHOTO_URLS } from './constants';
 import ParticleCanvas from './components/ParticleCanvas';
 import AmbiencePlayer from './components/AmbiencePlayer';
 import VoiceSubtitle from './components/VoiceSubtitle';
-import MicButton from './components/MicButton';
+import MicButton, { MicButtonState } from './components/MicButton';
 import VoiceStatusIndicator, { VoiceConnectionStatus } from './components/VoiceStatusIndicator';
 import SettingsPanel from './components/SettingsPanel';
+import SoundWave from './components/SoundWave';
+import VoiceControlCard from './components/VoiceControlCard';
 import LoginModal from './components/LoginModal';
 import { useGeminiLive } from './hooks/useGeminiLive';
 import { useAuth } from './hooks/useAuth';
@@ -40,8 +42,18 @@ export default function App() {
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.5);
 
+  // Disconnection state for better UX
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+
   // Visual Reactivity
   const [audioLevel, setAudioLevel] = useState(0); // 0.0 - 1.0 for visuals
+  const [inputAudioLevel, setInputAudioLevel] = useState(0); // 0.0 - 1.0 for input microphone level
+  // Performance: Sync audio level to a ref to pass to canvas without re-rendering
+  const audioLevelRef = useRef(0);
+
+  useEffect(() => {
+    audioLevelRef.current = audioLevel;
+  }, [audioLevel]);
 
   // Voice UI States
   const [voiceStatus, setVoiceStatus] = useState<VoiceConnectionStatus>('idle');
@@ -50,7 +62,6 @@ export default function App() {
   const [subtitleText, setSubtitleText] = useState<string>('');
   const [subtitleRole, setSubtitleRole] = useState<'user' | 'assistant' | null>(null);
   const [showSubtitle, setShowSubtitle] = useState<boolean>(false);
-  const subtitleUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // NEW: Photo Management (for background particle effects)
   const [defaultPhotoIndex, setDefaultPhotoIndex] = useState(0); // Which default photo to use
@@ -78,7 +89,7 @@ export default function App() {
     disconnect: disconnectGemini,
     analysers
   } = useGeminiLive(
-    // onTranscript callback - store both user and assistant transcriptions immediately
+    // onTranscript callback - store transcriptions and show as subtitle
     (text: string, role: 'user' | 'assistant') => {
       console.log('📝 Transcript received:', { role, text });
       // Store both user and assistant transcriptions immediately in background
@@ -91,6 +102,11 @@ export default function App() {
         console.log('✅ Transcript stored. Total turns:', updated.length);
         return updated;
       });
+
+      // Show complete text as subtitle
+      setSubtitleText(text);
+      setSubtitleRole(role);
+      setShowSubtitle(true);
     },
     // onTurnComplete callback
     () => {
@@ -98,30 +114,8 @@ export default function App() {
     },
     // setAudioLevel callback
     setAudioLevel,
-    // onPartialTranscript callback - for real-time subtitles (throttled to reduce flashing)
-    (text: string, role: 'user' | 'assistant') => {
-      if (text.trim()) {
-        // Clear any pending update
-        if (subtitleUpdateTimeoutRef.current) {
-          clearTimeout(subtitleUpdateTimeoutRef.current);
-        }
-
-        // Throttle updates to max 10 per second (100ms intervals) to prevent flashing
-        subtitleUpdateTimeoutRef.current = setTimeout(() => {
-          setSubtitleText(text.trim());
-          setSubtitleRole(role);
-          setShowSubtitle(true);
-        }, 100);
-      } else {
-        // Clear subtitle when text is empty (immediate, no throttle)
-        if (subtitleUpdateTimeoutRef.current) {
-          clearTimeout(subtitleUpdateTimeoutRef.current);
-        }
-        setShowSubtitle(false);
-        setSubtitleText('');
-        setSubtitleRole(null);
-      }
-    }
+    // onPartialTranscript callback - not used for subtitles anymore
+    undefined
   );
 
   // Update voice status based on connection state
@@ -131,11 +125,14 @@ export default function App() {
       setVoiceStatus('connecting');
     } else if (isConnected) {
       setVoiceStatus('connected');
+      setIsDisconnecting(false); // Reset disconnecting state when connected
     } else if (geminiError) {
       setVoiceStatus('error');
+      setIsDisconnecting(false); // Reset disconnecting state on error
       console.error('❌ Gemini Error:', geminiError);
     } else {
       setVoiceStatus('idle');
+      setIsDisconnecting(false); // Reset disconnecting state when idle
     }
   }, [isConnecting, isConnected, geminiError]);
 
@@ -149,30 +146,68 @@ export default function App() {
     }
   }, [audioLevel, isConnected]);
 
+  // Monitor input audio level for SoundWave visualization
+  useEffect(() => {
+    if (!analysers.input || !isConnected) {
+      setInputAudioLevel(0);
+      return;
+    }
+
+    const analyser = analysers.input;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    let animationFrameId: number;
+
+    const updateInputLevel = () => {
+      analyser.getByteFrequencyData(dataArray);
+
+      // Calculate average volume from frequency data
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+
+      // Normalize to 0.0 - 1.0 range (byte values are 0-255)
+      const normalizedLevel = average / 255;
+
+      setInputAudioLevel(normalizedLevel);
+      animationFrameId = requestAnimationFrame(updateInputLevel);
+    };
+
+    updateInputLevel();
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [analysers.input, isConnected]);
+
   // Auto-clear subtitles after period of inactivity
   useEffect(() => {
     if (!showSubtitle || !subtitleText) return;
 
-    // Clear subtitle after 5 seconds of no updates
+    // Clear subtitle after 10 seconds of no updates (increased for better readability)
     const clearTimer = setTimeout(() => {
       setShowSubtitle(false);
       setSubtitleText('');
       setSubtitleRole(null);
-    }, 5000);
+    }, 10000);
 
     return () => clearTimeout(clearTimer);
   }, [subtitleText, showSubtitle]);
 
-  // Cleanup throttle timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (subtitleUpdateTimeoutRef.current) {
-        clearTimeout(subtitleUpdateTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // --- Helpers ---
+
+  // Map voice connection status to MicButton visual state
+  const getMicButtonState = (): MicButtonState => {
+    if (geminiError) return 'error';
+    if (isDisconnecting) return 'disconnecting';
+    if (isConnecting) return 'connecting';
+    if (isConnected) return 'connected';
+    return 'idle';
+  };
 
   // NEW: Get the current photo URL for particle effects
   const getCurrentPhotoUrl = (): string => {
@@ -217,13 +252,13 @@ export default function App() {
   };
 
   const startMemoryProcess = () => {
-     setAppState('RENDERING');
-     // Simulate rendering time for effect
-     setTimeout(() => {
-         setAppState('SESSION');
-         // Don't auto-connect anymore - user will click mic button
-         setIsMusicPlaying(true);
-     }, 2500);
+    setAppState('RENDERING');
+    // Simulate rendering time for effect
+    setTimeout(() => {
+      setAppState('SESSION');
+      // Don't auto-connect anymore - user will click mic button
+      setIsMusicPlaying(true);
+    }, 2500);
   };
 
 
@@ -269,18 +304,24 @@ export default function App() {
   // --- Gemini Live Integration ---
 
   const handleMicClick = async () => {
-    console.log('🎤 Mic button clicked', { isConnected, isConnecting });
+    console.log('🎤 Mic button clicked', { isConnected, isConnecting, isDisconnecting });
 
     if (isConnected) {
-      // If already connected, disconnect
+      // If already connected, disconnect with visual feedback
       console.log('🔌 Disconnecting...');
-      disconnectGemini();
-      setSessionState('IDLE');
+      setIsDisconnecting(true);
+
+      // Small delay to ensure user sees the disconnecting state
+      setTimeout(() => {
+        disconnectGemini();
+        setSessionState('IDLE');
+        setIsDisconnecting(false);
+      }, 300); // 300ms delay for visual feedback
       return;
     }
 
-    if (isConnecting) {
-      console.log('⏳ Already connecting, please wait...');
+    if (isConnecting || isDisconnecting) {
+      console.log('⏳ Already connecting/disconnecting, please wait...');
       return;
     }
 
@@ -299,9 +340,9 @@ export default function App() {
       });
 
       if (!apiKey) {
-          console.error('❌ API Key missing in Vite environment');
-          alert("API Key missing. Please check .env file and restart dev server.");
-          return;
+        console.error('❌ API Key missing in Vite environment');
+        alert("API Key missing. Please check .env file and restart dev server.");
+        return;
       }
       // Photo is no longer required - we use default backgrounds
       // if (!photoData) {
@@ -554,7 +595,7 @@ export default function App() {
         Hobbi
       </h1>
       <p className="text-gray-400 max-w-2xl mb-12 text-lg font-light whitespace-nowrap">
-       A world built for you with Hobbi — where imagination becomes true companionship
+        A world built for you with Hobbi — where imagination becomes true companionship
       </p>
 
       {appState === 'LANDING' ? (
@@ -562,10 +603,10 @@ export default function App() {
           onClick={startChatSession}
           className="group cursor-pointer relative px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 transition-all rounded-full overflow-hidden backdrop-blur-sm"
         >
-            <span className="relative z-10 flex items-center gap-2 text-white tracking-widest uppercase text-sm font-semibold">
-                <Sparkles size={16} /> Have a chat
-            </span>
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <span className="relative z-10 flex items-center gap-2 text-white tracking-widest uppercase text-sm font-semibold">
+            <Sparkles size={16} /> Have a chat
+          </span>
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
       ) : null}
     </div>
@@ -573,129 +614,143 @@ export default function App() {
 
   const UploadPreview = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-6 animate-fade-in">
-        {photoData && (
-            <div className="relative w-full max-w-md aspect-[3/4] md:aspect-square rounded-lg overflow-hidden shadow-2xl border border-white/10 mb-8">
-                <img src={photoData.previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/20" />
-            </div>
-        )}
-        <div className="flex gap-4">
-             <button
-                onClick={() => setAppState('LANDING')}
-                className="px-6 py-3 rounded-full border border-white/20 text-white/60 hover:text-white hover:bg-white/5 transition-all"
-             >
-                Try Another
-             </button>
-             <button
-                onClick={startMemoryProcess}
-                className="px-8 py-3 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all shadow-lg shadow-white/10"
-             >
-                Visualize & Speak
-             </button>
+      {photoData && (
+        <div className="relative w-full max-w-md aspect-[3/4] md:aspect-square rounded-lg overflow-hidden shadow-2xl border border-white/10 mb-8">
+          <img src={photoData.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/20" />
         </div>
+      )}
+      <div className="flex gap-4">
+        <button
+          onClick={() => setAppState('LANDING')}
+          className="px-6 py-3 rounded-full border border-white/20 text-white/60 hover:text-white hover:bg-white/5 transition-all"
+        >
+          Try Another
+        </button>
+        <button
+          onClick={startMemoryProcess}
+          className="px-8 py-3 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all shadow-lg shadow-white/10"
+        >
+          Visualize & Speak
+        </button>
+      </div>
     </div>
   );
 
   const SessionView = () => (
     <div className="relative z-10 flex flex-col h-screen">
-        {/* Header / Top Bar */}
-        <div className="flex justify-between items-center p-6 text-white/50 z-20">
-            <VoiceStatusIndicator
-              status={voiceStatus}
-              showLabel={true}
-              label="Gemini"
-              size={10}
-              glowIntensity={8}
-            />
-            <div className="flex items-center gap-4">
-                 <button onClick={() => setMusicVolume(v => v === 0 ? 0.5 : 0)}>
-                     {musicVolume === 0 ? <X size={16}/> : <Volume2 size={16} />}
-                 </button>
-                 <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={musicVolume}
-                    onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                    className="w-20 accent-white h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                 />
-                 {/* NEW: Settings Button */}
-                 <button
-                   onClick={() => setShowSettings(true)}
-                   className="p-2 hover:bg-white/10 rounded-full transition-colors"
-                   title="Background Settings"
-                 >
-                   <Settings size={18} />
-                 </button>
-            </div>
+      {/* Header / Top Bar */}
+      <div className="flex justify-between items-center p-6 text-white/50 z-20">
+        <VoiceStatusIndicator
+          status={voiceStatus}
+          showLabel={true}
+          label="Gemini"
+          size={10}
+          glowIntensity={8}
+        />
+        <div className="flex items-center gap-4">
+          <button onClick={() => setMusicVolume(v => v === 0 ? 0.5 : 0)}>
+            {musicVolume === 0 ? <X size={16} /> : <Volume2 size={16} />}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={musicVolume}
+            onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+            className="w-20 accent-white h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+          />
+          {/* NEW: Settings Button */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            title="Background Settings"
+          >
+            <Settings size={18} />
+          </button>
         </div>
+      </div>
 
-        {/* Central Visual Area */}
-        <div className="flex-1 flex flex-col items-center justify-center relative p-6">
+      {/* Central Visual Area */}
+      <div className="flex-1 flex flex-col items-center justify-center relative p-6">
 
-            {/* Real-time Subtitles - Centered to avoid overlap with mic button area */}
-            <VoiceSubtitle
-                text={subtitleText}
-                isVisible={showSubtitle && isConnected}
-                role={subtitleRole}
-                position="center"
-                typewriterEffect={false} // Disable typewriter for real-time updates
-                maxWidth="80%"
-                opacity={0.7}
-                fontSize="text-xl md:text-2xl"
-            />
+        {/* Real-time Subtitles - Centered to avoid overlap with mic button area */}
+        <VoiceSubtitle
+          text={subtitleText}
+          isVisible={showSubtitle && isConnected}
+          role={subtitleRole}
+          position="center"
+          typewriterEffect={false} // Disable typewriter for real-time updates
+          maxWidth="80%"
+          opacity={0.7}
+          fontSize="text-xl md:text-2xl"
+        />
 
-            {/* Connection Status Messages */}
-            {isConnecting && (
-                <div className="text-center space-y-4">
-                    <div className="w-10 h-10 border-t-2 border-white/50 rounded-full animate-spin mx-auto" />
-                    <p className="text-white/60 font-light animate-pulse">Connecting to Gemini...</p>
-                </div>
-            )}
+        {/* Connection Status Messages */}
+        {isConnecting && (
+          <div className="text-center space-y-4">
+            <div className="w-10 h-10 border-t-2 border-white/50 rounded-full animate-spin mx-auto" />
+            <p className="text-white/60 font-light animate-pulse">Connecting to Gemini...</p>
+          </div>
+        )}
 
 
 
-            {/* Show error if any */}
-            {geminiError && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 max-w-md text-center">
-                    <p className="text-red-400 text-sm mb-2 font-semibold">Connection Error</p>
-                    <p className="text-red-300 text-xs">{geminiError}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-lg text-red-300 text-xs transition-colors"
-                    >
-                        Reload Page
-                    </button>
-                </div>
-            )}
-        </div>
-
-        {/* Bottom Controls */}
-        <div className="p-8 flex flex-col items-center gap-6 z-20">
-            {/* Mic Button */}
-            <MicButton
-                isRecording={isConnected}
-                onClick={handleMicClick}
-                size={72}
-                glowColor={isConnected ? "rgb(34, 197, 94)" : "rgb(99, 102, 241)"}
-                breathingDuration={2.5}
-                disabled={isConnecting}
-            />
-
-            {!isConnected && !isConnecting && (
-                <p className="text-sm text-white/50 font-light">Tap to start your conversation</p>
-            )}
-            {isConnected && (
-                <p className="text-sm text-emerald-400 font-light">● Live - Speak freely</p>
-            )}
+        {/* Show error if any */}
+        {geminiError && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 max-w-md text-center">
+            <p className="text-red-400 text-sm mb-2 font-semibold">Connection Error</p>
+            <p className="text-red-300 text-xs">{geminiError}</p>
             <button
-                onClick={handleEndSessionClick}
-                className="text-xs text-white/30 hover:text-white transition-colors border-b border-transparent hover:border-white"
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-lg text-red-300 text-xs transition-colors"
             >
-                End Session & Save Summary
+              Reload Page
             </button>
-        </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Controls */}
+      <div className="p-8 flex flex-col items-center gap-6 z-20">
+
+        {/* Unified Voice Control Card - Soundwave + Mic Button */}
+        <VoiceControlCard
+          audioLevel={inputAudioLevel}
+          isRecording={isConnected}
+          micState={getMicButtonState()}
+          onMicClick={handleMicClick}
+          disabled={isConnecting || isDisconnecting}
+          placeholder={
+            !isConnected && !isConnecting && !isDisconnecting
+              ? 'Tap mic to speak'
+              : isConnecting
+                ? 'Connecting...'
+                : isDisconnecting
+                  ? 'Disconnecting...'
+                  : ''
+          }
+          showPlaceholder={true}
+          width="400px"
+        />
+
+        <button
+          onClick={handleEndSessionClick}
+          className="
+            flex items-center gap-2
+            text-sm text-[#0081A7] hover:text-[#00AFCC]
+            transition-all duration-200
+            px-4 py-2 rounded-lg
+            border border-[#0081A7]/30 hover:border-[#00AFCC]/60
+            bg-[#0081A7]/5 hover:bg-[#0081A7]/15
+            mt-2
+          "
+        >
+          <LogOut size={14} />
+          <span>End Session & Save Summary</span>
+        </button>
+      </div>
     </div>
   );
 
@@ -796,6 +851,7 @@ export default function App() {
         imageUrl={appState === 'LANDING' ? null : getCurrentPhotoUrl()}
         isActive={true}
         audioLevel={audioLevel}
+        audioRef={audioLevelRef}
       />
 
       {/* Audio Layer */}
@@ -807,23 +863,23 @@ export default function App() {
 
       {/* Rendering State Overlay */}
       {appState === 'RENDERING' && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
-              <div className="text-center">
-                  <div className="w-12 h-12 border-t-2 border-white rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-white/60 font-serif tracking-widest animate-pulse">STARTING THE CHAT...</p>
-              </div>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="text-center">
+            <div className="w-12 h-12 border-t-2 border-white rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-white/60 font-serif tracking-widest animate-pulse">STARTING THE CHAT...</p>
           </div>
+        </div>
       )}
 
       {/* Summary Generation Loading Overlay */}
       {isGeneratingSummary && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
-              <div className="text-center space-y-4">
-                  <div className="w-12 h-12 border-t-2 border-emerald-400 rounded-full animate-spin mx-auto" />
-                  <p className="text-white/60 font-serif tracking-widest animate-pulse">GENERATING SUMMARY...</p>
-                  <p className="text-white/40 text-sm font-light">This may take a moment</p>
-              </div>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-t-2 border-emerald-400 rounded-full animate-spin mx-auto" />
+            <p className="text-white/60 font-serif tracking-widest animate-pulse">GENERATING SUMMARY...</p>
+            <p className="text-white/40 text-sm font-light">This may take a moment</p>
           </div>
+        </div>
       )}
 
       {/* Main Views */}
