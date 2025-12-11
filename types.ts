@@ -38,6 +38,17 @@ export interface SessionSummary {
   endTime: number;              // Session end timestamp
 }
 
+// Session data stored in Firebase sessions/{sessionId}
+export interface SessionData {
+  id?: string;                  // Document ID (auto-generated)
+  userUid: string;              // User who created this session
+  summary: SessionSummary;      // Session summary data
+  transcript: MemoryTurn[];     // Full conversation transcript
+  createdAt: number;            // Timestamp when session was created
+  tags?: string[];              // Optional tags for categorization
+  isFavorite?: boolean;         // User can mark favorites
+}
+
 export interface Particle {
   x: number;      // World Space X
   y: number;      // World Space Y
@@ -51,4 +62,77 @@ export interface Particle {
   vy: number;
   vz: number;
   life: number;   // For sparkles/fading
+}
+
+// Firebase Firestore Types
+
+// User profile stored in users/{uid}
+export interface UserProfile {
+  uid: string;
+  email?: string;
+  displayName?: string;
+  photoURL?: string;
+  createdAt: number;
+  lastActive: number;
+  settings?: {
+    theme?: 'light' | 'dark';
+    notifications?: boolean;
+  };
+}
+
+// Chat message stored in chats/{chatId}/messages/{messageId}
+export interface ChatMessage {
+  id: string;
+  chatId: string;
+  senderUid: string;
+  senderName?: string;
+  text: string;
+  attachments?: MessageAttachment[];
+  createdAt: number; // Will use serverTimestamp() on write
+  updatedAt?: number;
+  metadata?: {
+    aiModel?: string;
+    voiceDetected?: boolean;
+  };
+}
+
+// Attachment reference in messages
+export interface MessageAttachment {
+  id: string;
+  type: 'image' | 'audio' | 'file';
+  storagePath: string;      // Path in Firebase Storage
+  downloadURL: string;      // Public download URL
+  fileName: string;
+  mimeType: string;
+  size: number;             // File size in bytes
+  thumbnailURL?: string;    // Optional thumbnail for images
+}
+
+// Chat metadata stored in chats/{chatId}
+export interface Chat {
+  id: string;
+  name?: string;
+  participants: string[];   // Array of user UIDs
+  createdBy: string;
+  createdAt: number;
+  lastMessageAt?: number;
+  lastMessageText?: string;
+  messageCount: number;
+}
+
+// Photo upload metadata stored in uploads/{uploadId}
+export interface UploadMetadata {
+  id: string;
+  uploaderUid: string;
+  storagePath: string;      // uploads/{uid}/{uuid}.{ext}
+  downloadURL: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+  createdAt: number;
+  tags?: string[];
+  associatedChatId?: string;
+  associatedMessageId?: string;
 }
