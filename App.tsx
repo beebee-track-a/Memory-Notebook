@@ -448,6 +448,18 @@ export default function App() {
     };
   };
 
+  const handleEndSessionClick = () => {
+    // Check authentication BEFORE allowing summary generation
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing login modal');
+      setShowLoginModal(true);
+      return;
+    }
+
+    // User is authenticated, proceed with ending session
+    endSession();
+  };
+
   const endSession = async () => {
     disconnectGemini();
     setIsMusicPlaying(false);
@@ -525,12 +537,12 @@ export default function App() {
   };
 
   const handleLoginSuccess = async () => {
-    console.log('✅ User logged in successfully, saving session...');
-    // Close modal and save session
+    console.log('✅ User logged in successfully, generating summary...');
+    // Close modal and proceed with ending session
     setShowLoginModal(false);
     // Wait a brief moment for auth state to update
     setTimeout(() => {
-      handleSaveSession();
+      endSession();
     }, 500);
   };
 
@@ -678,7 +690,7 @@ export default function App() {
                 <p className="text-sm text-emerald-400 font-light">● Live - Speak freely</p>
             )}
             <button
-                onClick={endSession}
+                onClick={handleEndSessionClick}
                 className="text-xs text-white/30 hover:text-white transition-colors border-b border-transparent hover:border-white"
             >
                 End Session & Save Summary
