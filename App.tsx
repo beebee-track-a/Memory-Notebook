@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Mic, MicOff, Save, Sparkles, X, Volume2, Volume1, Settings, LogOut } from 'lucide-react';
 
-import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary } from './types';
+import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary, HistoryViewState, HistoryEntry } from './types';
 import { SYSTEM_INSTRUCTION, DEFAULT_PHOTO_URLS } from './constants';
 import ParticleCanvas from './components/ParticleCanvas';
 import AmbiencePlayer from './components/AmbiencePlayer';
@@ -9,12 +9,13 @@ import VoiceSubtitle from './components/VoiceSubtitle';
 import MicButton, { MicButtonState } from './components/MicButton';
 import VoiceStatusIndicator, { VoiceConnectionStatus } from './components/VoiceStatusIndicator';
 import SettingsPanel from './components/SettingsPanel';
+import { CalendarView, CarouselView, groupSessionsByDate } from './components/HistoryViews';
 import SoundWave from './components/SoundWave';
 import VoiceControlCard from './components/VoiceControlCard';
 import LoginModal from './components/LoginModal';
 import { useGeminiLive } from './hooks/useGeminiLive';
 import { useAuth } from './hooks/useAuth';
-import { saveSession } from './services/firebaseAPI';
+import { saveSession, getUserSessions, deleteSession } from './services/firebaseAPI';
 
 export default function App() {
   // Debug: Check API key on component mount
@@ -73,6 +74,15 @@ export default function App() {
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+
+  // Memory Garden State
+  const [historyViewState, setHistoryViewState] = useState<HistoryViewState>('HIDDEN');
+  const [selectedDateForHistory, setSelectedDateForHistory] = useState<string>('');
+  const [selectedHistoryEntries, setSelectedHistoryEntries] = useState<HistoryEntry[]>([]);
+
+  // Memory Garden Firebase Data
+  const [sessionsByDate, setSessionsByDate] = useState<Record<string, HistoryEntry[]>>({});
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Firebase Authentication
   const { user, loading: authLoading, isAuthenticated } = useAuth();
@@ -298,6 +308,63 @@ export default function App() {
     // If deleted photo was selected, revert to default
     if (selectedCustomPhotoId === photoId) {
       setSelectedCustomPhotoId(null);
+    }
+  };
+
+  // --- Memory Garden Handlers ---
+  const openHistoryCalendar = async () => {
+    // Check authentication first
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing login modal');
+      setShowLoginModal(true);
+      return;
+    }
+
+    // Load sessions from Firebase
+    setIsLoadingHistory(true);
+    try {
+      const sessions = await getUserSessions(90); // Last 90 days
+      const grouped = groupSessionsByDate(sessions);
+      setSessionsByDate(grouped);
+      setHistoryViewState('CALENDAR');
+    } catch (error) {
+      console.error('Failed to load session history:', error);
+      // Optionally show error message to user
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const closeHistory = () => setHistoryViewState('HIDDEN');
+
+  const handleDateSelect = (date: string, entries: HistoryEntry[]) => {
+    setSelectedDateForHistory(date);
+    setSelectedHistoryEntries(entries);
+    setHistoryViewState('CAROUSEL');
+  };
+
+  const handleDeleteHistoryEntry = async (id: string) => {
+    try {
+      // Delete from Firebase
+      await deleteSession(id);
+
+      // Remove from local state
+      setSelectedHistoryEntries(prev => prev.filter(entry => entry.id !== id));
+
+      // Also remove from sessionsByDate to update calendar
+      setSessionsByDate(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(date => {
+          updated[date] = updated[date].filter(entry => entry.id !== id);
+          if (updated[date].length === 0) {
+            delete updated[date]; // Remove empty dates
+          }
+        });
+        return updated;
+      });
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+      // Optionally show error message
     }
   };
 
@@ -639,8 +706,30 @@ export default function App() {
 
   const SessionView = () => (
     <div className="relative z-10 flex flex-col h-screen">
+      {/* Left Sidebar: Memory Garden Trigger */}
+      <div className="absolute left-0 top-0 bottom-0 flex items-center z-30">
+        <button
+          onClick={openHistoryCalendar}
+          className="group flex flex-col items-center gap-4 p-4 hover:bg-white/5 transition-all h-32 md:h-auto rounded-r-2xl border-y border-r border-transparent hover:border-white/10"
+        >
+          {/* Decorative line - Top - Saturn Yellow */}
+          <div className="w-[1px] h-12 bg-gradient-to-b from-transparent via-[#EBD671]/60 to-transparent group-hover:via-[#EBD671] transition-all" />
+
+          {/* Text - Saturn Yellow */}
+          <span
+            className="text-[14px] uppercase tracking-[0.25em] text-[#EBD671]/70 group-hover:text-[#EBD671] transition-colors rotate-180"
+            style={{ writingMode: 'vertical-rl' }}
+          >
+            Memory Garden
+          </span>
+
+          {/* Decorative line - Bottom - Saturn Yellow */}
+          <div className="w-[1px] h-12 bg-gradient-to-b from-transparent via-[#EBD671]/60 to-transparent group-hover:via-[#EBD671] transition-all" />
+        </button>
+      </div>
+
       {/* Header / Top Bar */}
-      <div className="flex justify-between items-center p-6 text-white/50 z-20">
+      <div className="flex justify-between items-center p-6 text-white/50 z-20 pl-20">
         <VoiceStatusIndicator
           status={voiceStatus}
           showLabel={true}
@@ -905,6 +994,35 @@ export default function App() {
         onClose={() => setShowLoginModal(false)}
         onLoginSuccess={handleLoginSuccess}
       />
+
+      {/* Memory Garden Loading Overlay */}
+      {isLoadingHistory && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-t-2 border-[#EBD671] rounded-full animate-spin mx-auto" />
+            <p className="text-white/80 font-serif tracking-widest">LOADING MEMORIES...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Memory Garden Overlays */}
+      {historyViewState === 'CALENDAR' && (
+        <CalendarView
+          onClose={closeHistory}
+          onSelectDate={handleDateSelect}
+          sessionsByDate={sessionsByDate}
+        />
+      )}
+
+      {historyViewState === 'CAROUSEL' && (
+        <CarouselView
+          date={selectedDateForHistory}
+          entries={selectedHistoryEntries}
+          onBack={openHistoryCalendar}
+          onClose={closeHistory}
+          onDeleteEntry={handleDeleteHistoryEntry}
+        />
+      )}
 
     </div>
   );
