@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Upload, Check, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { UploadedPhoto } from '../types';
 
 interface SettingsPanelProps {
@@ -21,6 +22,8 @@ export default function SettingsPanel({
   onPhotoSelect,
   onPhotoDelete,
 }: SettingsPanelProps) {
+  const { t } = useTranslation();
+
   if (!isOpen) return null;
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,7 +57,7 @@ export default function SettingsPanel({
       <div className="fixed right-0 top-0 bottom-0 w-full md:w-96 bg-black/90 backdrop-blur-xl border-l border-white/10 z-50 p-6 overflow-y-auto animate-fade-in">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-serif text-white">Background Settings</h2>
+          <h2 className="text-xl font-serif text-white">{t('settings:title')}</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-white/10 rounded-full transition-colors"
@@ -65,12 +68,12 @@ export default function SettingsPanel({
 
         {/* Upload Section */}
         <div className="mb-8">
-          <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">Custom Photos</h3>
+          <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">{t('settings:sections.customPhotos')}</h3>
 
           {/* Upload Button */}
           <label className="group cursor-pointer relative px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition-all rounded-lg overflow-hidden backdrop-blur-sm flex items-center justify-center gap-2">
             <Upload size={16} className="text-white/80" />
-            <span className="text-sm text-white/80 font-medium">Upload Photo</span>
+            <span className="text-sm text-white/80 font-medium">{t('settings:actions.uploadPhoto')}</span>
             <input
               type="file"
               accept="image/*"
@@ -81,14 +84,14 @@ export default function SettingsPanel({
           </label>
 
           <p className="text-xs text-white/40 mt-2">
-            Upload up to 5 photos to customize your background
+            {t('settings:instructions.uploadLimit')}
           </p>
         </div>
 
         {/* Photo Grid */}
         {uploadedPhotos.length > 0 && (
           <div className="mb-8">
-            <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">Your Photos</h3>
+            <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">{t('settings:sections.yourPhotos')}</h3>
             <div className="grid grid-cols-2 gap-3">
               {uploadedPhotos.map((photo) => {
                 const isSelected = selectedCustomPhotoId === photo.id;
@@ -104,7 +107,7 @@ export default function SettingsPanel({
                   >
                     <img
                       src={photo.previewUrl}
-                      alt="Custom background"
+                      alt={t('settings:tooltips.customBackground')}
                       className="w-full h-full object-cover"
                     />
 
@@ -123,7 +126,7 @@ export default function SettingsPanel({
                         onPhotoDelete(photo.id);
                       }}
                       className="absolute bottom-2 right-2 p-1.5 bg-red-500/90 hover:bg-red-500 rounded-full opacity-100 transition-all z-10"
-                      title="Delete photo"
+                      title={t('settings:tooltips.deletePhoto')}
                     >
                       <Trash2 size={12} className="text-white" />
                     </button>
@@ -139,19 +142,19 @@ export default function SettingsPanel({
 
         {/* Default Background Info */}
         <div className="p-4 bg-white/5 rounded-lg border border-white/10">
-          <h3 className="text-sm text-white/60 mb-2 uppercase tracking-wider">Default Background</h3>
+          <h3 className="text-sm text-white/60 mb-2 uppercase tracking-wider">{t('settings:sections.defaultBackground')}</h3>
           <p className="text-sm text-white/80">
             {selectedCustomPhotoId
-              ? 'Using your custom photo. Click it again to switch back to default.'
-              : 'Using beautiful default backgrounds that rotate automatically.'}
+              ? t('settings:instructions.usingCustom')
+              : t('settings:instructions.usingDefault')}
           </p>
         </div>
 
         {/* Instructions */}
         <div className="mt-8 space-y-2 text-xs text-white/40">
-          <p>• Click a photo to use it as your background</p>
-          <p>• Click again to switch back to default</p>
-          <p>• Hover and click trash icon to delete a photo</p>
+          <p>{t('settings:instructions.clickToUse')}</p>
+          <p>{t('settings:instructions.clickToRevert')}</p>
+          <p>{t('settings:instructions.hoverToDelete')}</p>
         </div>
       </div>
     </>

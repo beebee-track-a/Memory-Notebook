@@ -1,0 +1,25 @@
+{
+  "connection": {
+    "failed": "连接失败：{{message}}",
+    "noApiKey": "未找到 API 密钥。请检查 .env 文件并重启开发服务器。",
+    "timeout": "连接超时"
+  },
+  "session": {
+    "saveFailed": "保存会话失败。请重试。",
+    "loadingFailed": "加载会话失败",
+    "noSummary": "没有可用的会话摘要"
+  },
+  "auth": {
+    "googleFailed": "Google 登录失败",
+    "authFailed": "认证失败",
+    "required": "需要认证"
+  },
+  "summary": {
+    "generationFailed": "感谢您分享这段时光。您的想法和感受很重要。",
+    "loadingSummary": "加载摘要中..."
+  },
+  "photos": {
+    "uploadLimit": "最多允许 5 张照片。请先删除一张。",
+    "uploadFailed": "上传照片失败"
+  }
+}

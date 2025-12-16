@@ -1,7 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, X, Calendar as CalendarIcon, Clock, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { HistoryEntry, SessionData } from '../types';
+import type { SupportedLanguage } from '../i18n/types';
+import { formatTime as i18nFormatTime, formatDate as i18nFormatDate, getMonthNames } from '../i18n/utils';
 
 // --- DATA TRANSFORMATION UTILITIES ---
 
@@ -10,13 +13,10 @@ const formatDate = (timestamp: number): string => {
   return new Date(timestamp).toISOString().split('T')[0];
 };
 
-// Format timestamp to "11:51 AM"
-const formatTime = (timestamp: number): string => {
-  return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  });
+// Format timestamp to localized time string
+// This function is now a wrapper that will use i18n formatting
+const formatTime = (timestamp: number, language: SupportedLanguage = 'en'): string => {
+  return i18nFormatTime(timestamp, language);
 };
 
 // Generate title from AI summary (first sentence, max 50 chars)
@@ -63,6 +63,7 @@ interface SlideToDeleteProps {
 }
 
 const SlideToDelete: React.FC<SlideToDeleteProps> = ({ onConfirm, onCancel }) => {
+  const { t } = useTranslation('history');
   const [dragX, setDragX] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -132,15 +133,15 @@ const SlideToDelete: React.FC<SlideToDeleteProps> = ({ onConfirm, onCancel }) =>
         </button>
 
         <div className="mb-8 text-center space-y-2">
-             <h3 className="text-white/90 text-sm font-medium tracking-[0.2em] uppercase">Delete Memory?</h3>
-             <p className="text-white/30 text-xs font-light">将会永久删除</p>
+             <h3 className="text-white/90 text-sm font-medium tracking-[0.2em] uppercase">{t('deleteDialog.title')}</h3>
+             <p className="text-white/30 text-xs font-light">{t('deleteDialog.subtitle')}</p>
         </div>
 
         {/* Slider Track */}
         <div ref={trackRef} className="relative w-full h-14 bg-[#0a0000]/60 rounded-full overflow-hidden border border-white/5 box-border select-none">
             {/* Background Text */}
             <div className="absolute inset-0 flex items-center justify-center text-white/20 font-medium tracking-[0.15em] text-[10px] pointer-events-none pl-6">
-                SLIDE TO DELETE
+                {t('deleteDialog.slidePrompt')}
             </div>
 
             {/* Fill Track (Red reveal behind handle) */}
@@ -232,6 +233,7 @@ interface CalendarViewProps {
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ onClose, onSelectDate, sessionsByDate }) => {
+  const { t, i18n } = useTranslation('history');
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const year = currentDate.getFullYear();
@@ -240,7 +242,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onClose, onSelectDat
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 = Sunday
 
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const monthNames = getMonthNames(i18n.language as SupportedLanguage);
 
   const handlePrevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
@@ -291,12 +293,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onClose, onSelectDat
         </button>
 
         <div className="mb-10">
-          <h2 className="text-3xl font-serif text-white mb-2 tracking-wide">Day/night chron</h2>
+          <h2 className="text-3xl font-serif text-white mb-2 tracking-wide">{t('calendar.title')}</h2>
           <p className="text-white/40 text-sm font-light leading-relaxed">
-            You and I have memories,<br/>
-            longer than the road that stretches out ahead
+            {t('calendar.subtitle', { brand: t('common:brand') }).split('\n').map((line, i) => (
+              <React.Fragment key={i}>{line}<br/></React.Fragment>
+            ))}
           </p>
-          <p className="text-white/30 text-xs mt-2 uppercase tracking-widest">@Memory n Gemini</p>
+          <p className="text-white/30 text-xs mt-2 uppercase tracking-widest">{t('calendar.footer', { brand: t('common:brand') })}</p>
         </div>
 
         {/* Calendar Navigation */}
@@ -331,15 +334,17 @@ interface CarouselViewProps {
 }
 
 export const CarouselView: React.FC<CarouselViewProps> = ({ date, entries, onBack, onClose, onDeleteEntry }) => {
+  const { t, i18n } = useTranslation('history');
+
   return (
     <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col animate-fade-in">
         {/* Top Bar */}
         <div className="w-full flex justify-between items-center px-8 py-4 text-white z-10">
             <button onClick={onBack} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
-                <ChevronLeft size={20} /> Back to Calendar
+                <ChevronLeft size={20} /> {t('carousel.backToCalendar')}
             </button>
             <div className="font-serif text-xl tracking-widest text-white/80">
-                {new Date(date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                {i18nFormatDate(new Date(date).getTime(), i18n.language as SupportedLanguage)}
             </div>
             <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
                 <X size={24} />
@@ -360,7 +365,7 @@ export const CarouselView: React.FC<CarouselViewProps> = ({ date, entries, onBac
                     />
                 ))
             ) : (
-                <div className="w-full text-center text-white/30 italic">No memories left for this day.</div>
+                <div className="w-full text-center text-white/30 italic">{t('carousel.noMemories')}</div>
             )}
 
             <div className="w-4 md:w-32 flex-shrink-0" />
