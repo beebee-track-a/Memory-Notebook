@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Mail, Lock, LogIn } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { signInWithGoogle, signInWithEmail, signUpWithEmail } from '../services/auth';
 
 interface LoginModalProps {
@@ -9,6 +10,7 @@ interface LoginModalProps {
 }
 
 export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginModalProps) {
+  const { t } = useTranslation('auth');
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +28,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
       onLoginSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Google sign in failed');
+      setError(err.message || t('errors:auth.googleFailed'));
     } finally {
       setLoading(false);
     }
@@ -46,7 +48,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
       onLoginSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(err.message || t('errors:auth.authFailed'));
     } finally {
       setLoading(false);
     }
@@ -66,12 +68,10 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
         {/* Header */}
         <div className="text-center mb-8">
           <h2 className="text-3xl font-serif text-white mb-2">
-            {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
+            {t(`${mode}.title`)}
           </h2>
           <p className="text-white/50 text-sm">
-            {mode === 'signin'
-              ? 'Sign in to save your conversation'
-              : 'Create an account to save your sessions'}
+            {t(`${mode}.subtitle`)}
           </p>
         </div>
 
@@ -99,7 +99,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
               d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
             />
           </svg>
-          Continue with Google
+          {t('actions.googleSignIn')}
         </button>
 
         {/* Divider */}
@@ -108,7 +108,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
             <div className="w-full border-t border-white/10"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-4 bg-black/60 text-white/40">or</span>
+            <span className="px-4 bg-black/60 text-white/40">{t('actions.or')}</span>
           </div>
         </div>
 
@@ -116,12 +116,12 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
         <form onSubmit={handleEmailAuth} className="space-y-4">
           {mode === 'signup' && (
             <div>
-              <label className="block text-white/60 text-sm mb-2">Display Name</label>
+              <label className="block text-white/60 text-sm mb-2">{t('fields.displayName')}</label>
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your name"
+                placeholder={t('fields.namePlaceholder')}
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
                 required={mode === 'signup'}
               />
@@ -129,14 +129,14 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
           )}
 
           <div>
-            <label className="block text-white/60 text-sm mb-2">Email</label>
+            <label className="block text-white/60 text-sm mb-2">{t('fields.email')}</label>
             <div className="relative">
               <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder={t('fields.emailPlaceholder')}
                 className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
                 required
               />
@@ -144,14 +144,14 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
           </div>
 
           <div>
-            <label className="block text-white/60 text-sm mb-2">Password</label>
+            <label className="block text-white/60 text-sm mb-2">{t('fields.password')}</label>
             <div className="relative">
               <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder={t('fields.passwordPlaceholder')}
                 className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
                 required
                 minLength={6}
@@ -171,7 +171,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
             className="w-full px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <LogIn size={18} />
-            {loading ? 'Please wait...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+            {loading ? t('actions.pleaseWait') : t(`${mode}.button`)}
           </button>
         </form>
 
@@ -184,9 +184,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
             }}
             className="text-white/60 hover:text-white text-sm transition-colors"
           >
-            {mode === 'signin'
-              ? "Don't have an account? Sign up"
-              : 'Already have an account? Sign in'}
+            {t(`${mode}.togglePrompt`)}
           </button>
         </div>
       </div>

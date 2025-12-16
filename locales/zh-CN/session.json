@@ -1,0 +1,32 @@
+{
+  "controls": {
+    "endSession": "结束会话并保存摘要",
+    "tapToSpeak": "点击麦克风说话",
+    "tapToTranslate": "点击翻译",
+    "connectingLabel": "Gemini"
+  },
+  "loading": {
+    "startingChat": "正在启动对话...",
+    "generatingSummary": "正在生成摘要...",
+    "generatingSummaryHint": "可能需要一点时间",
+    "loadingMemories": "正在加载记忆...",
+    "connectingToGemini": "正在连接 Gemini...",
+    "pleaseWait": "请稍候...",
+    "disconnecting": "正在断开连接..."
+  },
+  "summary": {
+    "title": "会话完成",
+    "conversationSummary": "对话摘要",
+    "duration": "时长",
+    "messages": "消息",
+    "exchanges": "你/AI",
+    "savedSuccessfully": "保存成功！"
+  },
+  "voiceControl": {
+    "liveIndicator": "● 直播中"
+  },
+  "errors": {
+    "connectionError": "连接错误",
+    "reloadPage": "重新加载页面"
+  }
+}

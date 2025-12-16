@@ -1,0 +1,26 @@
+{
+  "memoryGarden": "Memory Garden",
+  "calendar": {
+    "title": "Day/night chron",
+    "subtitle": "You and {{brand}} have memories,\nlonger than the road that stretches out ahead",
+    "footer": "@Memory n {{brand}}",
+    "weekdays": {
+      "sunday": "S",
+      "monday": "M",
+      "tuesday": "T",
+      "wednesday": "W",
+      "thursday": "T",
+      "friday": "F",
+      "saturday": "S"
+    }
+  },
+  "carousel": {
+    "backToCalendar": "Back to Calendar",
+    "noMemories": "No memories left for this day."
+  },
+  "deleteDialog": {
+    "title": "Delete Memory?",
+    "subtitle": "This will be permanently deleted",
+    "slidePrompt": "SLIDE TO DELETE"
+  }
+}

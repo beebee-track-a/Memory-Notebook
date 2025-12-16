@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Mic, MicOff, Save, Sparkles, X, Volume2, Volume1, Settings, LogOut } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary, HistoryViewState, HistoryEntry } from './types';
 import { SYSTEM_INSTRUCTION, DEFAULT_PHOTO_URLS } from './constants';
@@ -13,11 +14,17 @@ import { CalendarView, CarouselView, groupSessionsByDate } from './components/Hi
 import SoundWave from './components/SoundWave';
 import VoiceControlCard from './components/VoiceControlCard';
 import LoginModal from './components/LoginModal';
+import LanguageSwitcher from './components/LanguageSwitcher';
 import { useGeminiLive } from './hooks/useGeminiLive';
 import { useAuth } from './hooks/useAuth';
 import { saveSession, getUserSessions, deleteSession } from './services/firebaseAPI';
+import type { SupportedLanguage } from './i18n/types';
+import { formatDate, formatTime } from './i18n/utils';
 
 export default function App() {
+  // i18n hooks
+  const { t, i18n } = useTranslation();
+
   // Debug: Check API key on component mount
   useEffect(() => {
     const apiKey =
@@ -275,7 +282,7 @@ export default function App() {
   // NEW: Photo Management Handlers
   const handlePhotoUpload = (file: File) => {
     if (uploadedPhotos.length >= 5) {
-      alert('Maximum 5 photos allowed. Please delete one first.');
+      alert(t('errors:photos.uploadLimit'));
       return;
     }
 
@@ -408,7 +415,7 @@ export default function App() {
 
       if (!apiKey) {
         console.error('❌ API Key missing in Vite environment');
-        alert("API Key missing. Please check .env file and restart dev server.");
+        alert(t('errors:connection.noApiKey'));
         return;
       }
       // Photo is no longer required - we use default backgrounds
@@ -430,8 +437,19 @@ export default function App() {
       console.log('✅ connectGemini call completed - connection should be established');
     } catch (error) {
       console.error('💥 Error in handleMicClick:', error);
-      alert(`Connection failed: ${error instanceof Error ? error.message : String(error)}`);
+      alert(t('errors:connection.failed', { message: error instanceof Error ? error.message : String(error) }));
     }
+  };
+
+  // Helper function to generate language-specific summary prompts
+  const getSummaryPrompt = (language: SupportedLanguage, conversationText: string): string => {
+    const prompts: Record<SupportedLanguage, string> = {
+      'en': `Please provide a warm, empathetic 2-3 sentence summary of the following conversation between a user and their voice companion. Focus on the key themes, emotions, and topics discussed:\n\n${conversationText}`,
+
+      'zh-CN': `请为以下用户与语音伴侣之间的对话提供一个温暖、富有同理心的 2-3 句话摘要。重点关注讨论的关键主题、情感和话题：\n\n${conversationText}`,
+    };
+
+    return prompts[language] || prompts['en'];
   };
 
   // NEW: Generate AI summary of the conversation using Gemini API
@@ -475,6 +493,10 @@ export default function App() {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
 
+        // Get language-specific prompt
+        const currentLanguage = i18n.language as SupportedLanguage;
+        const summaryPrompt = getSummaryPrompt(currentLanguage, conversationText);
+
         // Call Gemini API to generate summary
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -484,7 +506,7 @@ export default function App() {
             body: JSON.stringify({
               contents: [{
                 parts: [{
-                  text: `Please provide a warm, empathetic 2-3 sentence summary of the following conversation between a user and their voice companion. Focus on the key themes, emotions, and topics discussed:\n\n${conversationText}`
+                  text: summaryPrompt
                 }]
               }],
               generationConfig: {
@@ -638,7 +660,7 @@ export default function App() {
       }, 2000);
     } catch (error) {
       console.error('❌ Failed to save session:', error);
-      alert('Failed to save session. Please try again.');
+      alert(t('errors:session.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -659,10 +681,10 @@ export default function App() {
   const LandingView = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen text-center p-6">
       <h1 className="text-5xl md:text-7xl font-serif tracking-wide mb-4 text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-500 animate-pulse">
-        Hobbi
+        {t('common:brand')}
       </h1>
       <p className="text-gray-400 max-w-2xl mb-12 text-lg font-light whitespace-nowrap">
-        A world built for you with Hobbi — where imagination becomes true companionship
+        {t('landing:subtitle', { brand: t('common:brand') })}
       </p>
 
       {appState === 'LANDING' ? (
@@ -671,7 +693,7 @@ export default function App() {
           className="group cursor-pointer relative px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 transition-all rounded-full overflow-hidden backdrop-blur-sm"
         >
           <span className="relative z-10 flex items-center gap-2 text-white tracking-widest uppercase text-sm font-semibold">
-            <Sparkles size={16} /> Have a chat
+            <Sparkles size={16} /> {t('landing:startButton')}
           </span>
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
@@ -692,13 +714,13 @@ export default function App() {
           onClick={() => setAppState('LANDING')}
           className="px-6 py-3 rounded-full border border-white/20 text-white/60 hover:text-white hover:bg-white/5 transition-all"
         >
-          Try Another
+          {t('landing:tryAnother')}
         </button>
         <button
           onClick={startMemoryProcess}
           className="px-8 py-3 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all shadow-lg shadow-white/10"
         >
-          Visualize & Speak
+          {t('landing:visualizeAndSpeak')}
         </button>
       </div>
     </div>
@@ -717,10 +739,15 @@ export default function App() {
 
           {/* Text - Saturn Yellow */}
           <span
-            className="text-[14px] uppercase tracking-[0.25em] text-[#EBD671]/70 group-hover:text-[#EBD671] transition-colors rotate-180"
-            style={{ writingMode: 'vertical-rl' }}
+            className={`text-[14px] uppercase tracking-[0.25em] text-[#EBD671]/70 group-hover:text-[#EBD671] transition-colors ${
+              i18n.language === 'zh-CN' ? '' : 'rotate-180'
+            }`}
+            style={{
+              writingMode: i18n.language === 'zh-CN' ? 'vertical-rl' : 'vertical-rl',
+              textOrientation: i18n.language === 'zh-CN' ? 'upright' : 'mixed'
+            }}
           >
-            Memory Garden
+            {t('history:memoryGarden')}
           </span>
 
           {/* Decorative line - Bottom - Saturn Yellow */}
@@ -733,7 +760,7 @@ export default function App() {
         <VoiceStatusIndicator
           status={voiceStatus}
           showLabel={true}
-          label="Gemini"
+          label={t('session:controls.connectingLabel')}
           size={10}
           glowIntensity={8}
         />
@@ -750,11 +777,13 @@ export default function App() {
             onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
             className="w-20 accent-white h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
           />
+          {/* Language Switcher */}
+          <LanguageSwitcher />
           {/* NEW: Settings Button */}
           <button
             onClick={() => setShowSettings(true)}
             className="p-2 hover:bg-white/10 rounded-full transition-colors"
-            title="Background Settings"
+            title={t('settings:title')}
           >
             <Settings size={18} />
           </button>
@@ -780,7 +809,7 @@ export default function App() {
         {isConnecting && (
           <div className="text-center space-y-4">
             <div className="w-10 h-10 border-t-2 border-white/50 rounded-full animate-spin mx-auto" />
-            <p className="text-white/60 font-light animate-pulse">Connecting to Gemini...</p>
+            <p className="text-white/60 font-light animate-pulse">{t('session:loading.connectingToGemini')}</p>
           </div>
         )}
 
@@ -789,13 +818,13 @@ export default function App() {
         {/* Show error if any */}
         {geminiError && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 max-w-md text-center">
-            <p className="text-red-400 text-sm mb-2 font-semibold">Connection Error</p>
+            <p className="text-red-400 text-sm mb-2 font-semibold">{t('session:errors.connectionError')}</p>
             <p className="text-red-300 text-xs">{geminiError}</p>
             <button
               onClick={() => window.location.reload()}
               className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-lg text-red-300 text-xs transition-colors"
             >
-              Reload Page
+              {t('session:errors.reloadPage')}
             </button>
           </div>
         )}
@@ -813,11 +842,11 @@ export default function App() {
           disabled={isConnecting || isDisconnecting}
           placeholder={
             !isConnected && !isConnecting && !isDisconnecting
-              ? 'Tap mic to speak'
+              ? t('session:controls.tapToSpeak')
               : isConnecting
-                ? 'Connecting...'
+                ? t('common:status.connecting')
                 : isDisconnecting
-                  ? 'Disconnecting...'
+                  ? t('session:loading.disconnecting')
                   : ''
           }
           showPlaceholder={true}
@@ -837,7 +866,7 @@ export default function App() {
           "
         >
           <LogOut size={14} />
-          <span>End Session & Save Summary</span>
+          <span>{t('session:controls.endSession')}</span>
         </button>
       </div>
     </div>
@@ -851,7 +880,7 @@ export default function App() {
       return (
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-2xl mx-auto">
           <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl text-center">
-            <p className="text-white/60">Loading summary...</p>
+            <p className="text-white/60">{t('errors:summary.loadingSummary')}</p>
           </div>
         </div>
       );
@@ -872,15 +901,15 @@ export default function App() {
             <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <Sparkles size={32} className="text-emerald-400" />
             </div>
-            <h2 className="text-3xl font-serif text-white mb-2">Session Complete</h2>
+            <h2 className="text-3xl font-serif text-white mb-2">{t('session:summary.title')}</h2>
             <p className="text-white/50 text-sm">
-              {new Date(sessionSummary.endTime).toLocaleDateString()} • {new Date(sessionSummary.endTime).toLocaleTimeString()}
+              {formatDate(sessionSummary.endTime, i18n.language as SupportedLanguage)} • {formatTime(sessionSummary.endTime, i18n.language as SupportedLanguage)}
             </p>
           </div>
 
           {/* AI Summary */}
           <div className="mb-8 p-6 bg-white/5 rounded-xl border border-white/10">
-            <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">Conversation Summary</h3>
+            <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">{t('session:summary.conversationSummary')}</h3>
             <p className="text-white/90 text-lg leading-relaxed font-light italic">
               "{sessionSummary.aiGeneratedSummary}"
             </p>
@@ -892,19 +921,19 @@ export default function App() {
               <div className="text-2xl font-semibold text-white mb-1">
                 {formatDuration(sessionSummary.duration)}
               </div>
-              <div className="text-xs text-white/50 uppercase tracking-wider">Duration</div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">{t('session:summary.duration')}</div>
             </div>
             <div className="text-center p-4 bg-white/5 rounded-lg border border-white/10">
               <div className="text-2xl font-semibold text-white mb-1">
                 {sessionSummary.turnCount}
               </div>
-              <div className="text-xs text-white/50 uppercase tracking-wider">Messages</div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">{t('session:summary.messages')}</div>
             </div>
             <div className="text-center p-4 bg-white/5 rounded-lg border border-white/10">
               <div className="text-2xl font-semibold text-white mb-1">
                 {sessionSummary.userMessageCount}/{sessionSummary.aiMessageCount}
               </div>
-              <div className="text-xs text-white/50 uppercase tracking-wider">You/AI</div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">{t('session:summary.exchanges')}</div>
             </div>
           </div>
 
@@ -913,7 +942,7 @@ export default function App() {
             {saveSuccess ? (
               <div className="px-6 py-3 bg-emerald-500 text-white rounded-full text-sm font-semibold flex items-center gap-2">
                 <Sparkles size={16} />
-                Saved Successfully!
+                {t('session:summary.savedSuccessfully')}
               </div>
             ) : (
               <button
@@ -922,7 +951,7 @@ export default function App() {
                 className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full text-sm font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save size={16} />
-                {isSaving ? 'Saving...' : 'Save'}
+                {isSaving ? t('session:loading.pleaseWait') : t('common:buttons.save')}
               </button>
             )}
           </div>
@@ -955,7 +984,7 @@ export default function App() {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
           <div className="text-center">
             <div className="w-12 h-12 border-t-2 border-white rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-white/60 font-serif tracking-widest animate-pulse">STARTING THE CHAT...</p>
+            <p className="text-white/60 font-serif tracking-widest animate-pulse">{t('session:loading.startingChat')}</p>
           </div>
         </div>
       )}
@@ -965,8 +994,8 @@ export default function App() {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
           <div className="text-center space-y-4">
             <div className="w-12 h-12 border-t-2 border-emerald-400 rounded-full animate-spin mx-auto" />
-            <p className="text-white/60 font-serif tracking-widest animate-pulse">GENERATING SUMMARY...</p>
-            <p className="text-white/40 text-sm font-light">This may take a moment</p>
+            <p className="text-white/60 font-serif tracking-widest animate-pulse">{t('session:loading.generatingSummary')}</p>
+            <p className="text-white/40 text-sm font-light">{t('session:loading.generatingSummaryHint')}</p>
           </div>
         </div>
       )}
@@ -1000,7 +1029,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center">
           <div className="text-center space-y-4">
             <div className="w-12 h-12 border-t-2 border-[#EBD671] rounded-full animate-spin mx-auto" />
-            <p className="text-white/80 font-serif tracking-widest">LOADING MEMORIES...</p>
+            <p className="text-white/80 font-serif tracking-widest">{t('session:loading.loadingMemories')}</p>
           </div>
         </div>
       )}
