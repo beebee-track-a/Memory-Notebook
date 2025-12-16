@@ -5,9 +5,12 @@ import { createPcmBlob, decodeAudioData, base64ToUint8Array, PCM_SAMPLE_RATE, OU
 export interface UseGeminiLiveReturn {
   isConnected: boolean;
   isConnecting: boolean;
+  isPaused: boolean;
   error: string | null;
   connect: (systemInstruction?: string) => Promise<void>;
   disconnect: () => void;
+  pause: () => void;
+  resume: () => void;
   audioContexts: {
     input: AudioContext | null;
     output: AudioContext | null;
@@ -30,7 +33,9 @@ export const useGeminiLive = (
 ): UseGeminiLiveReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isPausedRef = useRef(false);
 
   // Refs for audio contexts and processing to avoid re-renders
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -228,12 +233,17 @@ export const useGeminiLive = (
                 amplifiedData[i] = inputData[i] * 3.0;
               }
 
-              // Calculate audio level for visualization
+              // Calculate audio level for visualization (always calculate, even when paused)
               if (setAudioLevel) {
                 let sum = 0;
                 for (let i = 0; i < amplifiedData.length; i++) sum += amplifiedData[i] * amplifiedData[i];
                 const rms = Math.sqrt(sum / amplifiedData.length);
                 if (rms > 0.05) setAudioLevel(Math.min(rms * 5, 0.5));
+              }
+
+              // Check if paused - skip sending audio but keep processing for visualization
+              if (isPausedRef.current) {
+                return; // Don't send audio to Gemini when paused
               }
 
               const pcmBlob = createPcmBlob(amplifiedData);
@@ -404,7 +414,19 @@ export const useGeminiLive = (
 
   const disconnect = useCallback(() => {
     cleanup();
+    setIsPaused(false);
+    isPausedRef.current = false;
   }, [cleanup]);
+
+  const pause = useCallback(() => {
+    setIsPaused(true);
+    isPausedRef.current = true;
+  }, []);
+
+  const resume = useCallback(() => {
+    setIsPaused(false);
+    isPausedRef.current = false;
+  }, []);
 
   // Clean up on unmount
   useEffect(() => {
@@ -416,9 +438,12 @@ export const useGeminiLive = (
   return {
     isConnected,
     isConnecting,
+    isPaused,
     error,
     connect,
     disconnect,
+    pause,
+    resume,
     audioContexts: {
       input: inputAudioContextRef.current,
       output: outputAudioContextRef.current
