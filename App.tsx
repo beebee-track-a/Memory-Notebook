@@ -33,10 +33,6 @@ export default function App() {
       import.meta.env.GEMINI_API_KEY ||
       import.meta.env.API_KEY;
 
-    console.log('🔍 App mounted. Checking environment:');
-    console.log('  - API_KEY exists:', !!apiKey);
-    console.log('  - API_KEY preview:', apiKey ? apiKey.substring(0, 20) + '...' : 'MISSING');
-    console.log('  - Vite env keys:', Object.keys(import.meta.env));
   }, []);
 
   // State
@@ -101,24 +97,22 @@ export default function App() {
   const {
     isConnected,
     isConnecting,
+    isPaused,
     error: geminiError,
     connect: connectGemini,
     disconnect: disconnectGemini,
+    pause: pauseGemini,
+    resume: resumeGemini,
     analysers
   } = useGeminiLive(
     // onTranscript callback - store transcriptions and show as subtitle
     (text: string, role: 'user' | 'assistant') => {
-      console.log('📝 Transcript received:', { role, text });
       // Store both user and assistant transcriptions immediately in background
-      setTranscript(prev => {
-        const updated = [...prev, {
-          role: role,
-          text: text,
-          timestamp: Date.now()
-        }];
-        console.log('✅ Transcript stored. Total turns:', updated.length);
-        return updated;
-      });
+      setTranscript(prev => [...prev, {
+        role: role,
+        text: text,
+        timestamp: Date.now()
+      }]);
 
       // Show complete text as subtitle
       setSubtitleText(text);
@@ -137,7 +131,6 @@ export default function App() {
 
   // Update voice status based on connection state
   useEffect(() => {
-    console.log('🔄 Connection state changed:', { isConnecting, isConnected, hasError: !!geminiError });
     if (isConnecting) {
       setVoiceStatus('connecting');
     } else if (isConnected) {
@@ -164,12 +157,15 @@ export default function App() {
   }, [audioLevel, isConnected]);
 
   // Monitor input audio level for SoundWave visualization
+  // TEMPORARILY DISABLED FOR TESTING - Check if requestAnimationFrame loop is blocking React events
   useEffect(() => {
     if (!analysers.input || !isConnected) {
       setInputAudioLevel(0);
       return;
     }
 
+    // TEMPORARILY DISABLED - Uncomment to restore
+    /*
     const analyser = analysers.input;
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     let animationFrameId: number;
@@ -198,6 +194,10 @@ export default function App() {
         cancelAnimationFrame(animationFrameId);
       }
     };
+    */
+    
+    // Keep audio level at 0 for testing
+    setInputAudioLevel(0);
   }, [analysers.input, isConnected]);
 
   // Auto-clear subtitles after period of inactivity
@@ -222,6 +222,7 @@ export default function App() {
     if (geminiError) return 'error';
     if (isDisconnecting) return 'disconnecting';
     if (isConnecting) return 'connecting';
+    if (isPaused) return 'idle'; // Show as idle when paused
     if (isConnected) return 'connected';
     return 'idle';
   };
@@ -322,7 +323,6 @@ export default function App() {
   const openHistoryCalendar = async () => {
     // Check authentication first
     if (!isAuthenticated) {
-      console.log('🔐 User not authenticated, showing login modal');
       setShowLoginModal(true);
       return;
     }
@@ -378,66 +378,39 @@ export default function App() {
   // --- Gemini Live Integration ---
 
   const handleMicClick = async () => {
-    console.log('🎤 Mic button clicked', { isConnected, isConnecting, isDisconnecting });
-
     if (isConnected) {
-      // If already connected, disconnect with visual feedback
-      console.log('🔌 Disconnecting...');
-      setIsDisconnecting(true);
-
-      // Small delay to ensure user sees the disconnecting state
-      setTimeout(() => {
-        disconnectGemini();
+      // Toggle pause/resume instead of disconnecting
+      if (isPaused) {
+        resumeGemini();
         setSessionState('IDLE');
-        setIsDisconnecting(false);
-      }, 300); // 300ms delay for visual feedback
+      } else {
+        pauseGemini();
+        setSessionState('IDLE');
+      }
       return;
     }
 
-    if (isConnecting || isDisconnecting) {
-      console.log('⏳ Already connecting/disconnecting, please wait...');
+    if (isConnecting) {
       return;
     }
 
     try {
-      // Start connection
       const apiKey =
         import.meta.env.VITE_GEMINI_API_KEY ||
         import.meta.env.VITE_API_KEY ||
         import.meta.env.GEMINI_API_KEY ||
         import.meta.env.API_KEY;
 
-      console.log('🎤 Starting connection...', {
-        hasApiKey: !!apiKey,
-        hasPhoto: !!photoData,
-        apiKey: apiKey ? 'exists' : 'missing'
-      });
-
       if (!apiKey) {
-        console.error('❌ API Key missing in Vite environment');
-        alert(t('errors:connection.noApiKey'));
+        alert("API Key missing. Please check .env file and restart dev server.");
         return;
       }
-      // Photo is no longer required - we use default backgrounds
-      // if (!photoData) {
-      //     console.error('❌ No photo data');
-      //     return;
-      // }
 
       setSessionState('IDLE');
-
-      console.log('📡 Calling connectGemini with:', {
-        instructionLength: SYSTEM_INSTRUCTION.length,
-        instructionPreview: SYSTEM_INSTRUCTION.substring(0, 100) + '...'
-      });
-
-      // Connect using the hook with system instruction
       await connectGemini(SYSTEM_INSTRUCTION);
-
-      console.log('✅ connectGemini call completed - connection should be established');
     } catch (error) {
-      console.error('💥 Error in handleMicClick:', error);
-      alert(t('errors:connection.failed', { message: error instanceof Error ? error.message : String(error) }));
+      console.error('Error in handleMicClick:', error);
+      alert(`Connection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
@@ -474,12 +447,6 @@ export default function App() {
       .map(t => `${t.role.toUpperCase()}: ${t.text}`)
       .join('\n\n');
 
-    console.log('📋 Transcript to summarize:', {
-      turnCount: transcript.length,
-      conversationLength: conversationText.length,
-      preview: conversationText.substring(0, 200) + '...'
-    });
-
     // Retry logic with exponential backoff for rate limiting
     const maxRetries = 3;
     let lastError: Error | null = null;
@@ -488,8 +455,7 @@ export default function App() {
       try {
         // Wait before retrying (exponential backoff)
         if (attempt > 0) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 seconds
-          console.log(`⏳ Retrying summary generation (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms...`);
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
 
@@ -530,22 +496,12 @@ export default function App() {
         }
 
         const data = await response.json();
-        console.log('📥 API Response:', JSON.stringify(data, null, 2));
-
-        // Try multiple possible response structures
-        let aiGeneratedSummary =
+        const aiGeneratedSummary =
           data.candidates?.[0]?.content?.parts?.[0]?.text ||
           data.candidates?.[0]?.output ||
           data.candidates?.[0]?.text ||
           data.text ||
           'A meaningful conversation was shared.';
-
-        console.log('📝 Extracted summary:', aiGeneratedSummary);
-        console.log('🔍 Response structure:', {
-          hasCandidates: !!data.candidates,
-          candidatesLength: data.candidates?.length,
-          firstCandidate: data.candidates?.[0],
-        });
 
         return {
           aiGeneratedSummary,
@@ -581,7 +537,6 @@ export default function App() {
   const handleEndSessionClick = () => {
     // Check authentication BEFORE allowing summary generation
     if (!isAuthenticated) {
-      console.log('🔐 User not authenticated, showing login modal');
       setShowLoginModal(true);
       return;
     }
@@ -598,11 +553,7 @@ export default function App() {
     setIsGeneratingSummary(true);
 
     // Wait 3 seconds to let rate limits reset after Live API disconnection
-    console.log('⏳ Waiting 3 seconds before generating summary...');
     await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Generate AI summary before moving to summary view
-    console.log('🎯 Generating conversation summary...');
     let summary: SessionSummary;
     try {
       summary = await generateSummary();
@@ -621,12 +572,8 @@ export default function App() {
       };
     }
 
-    console.log('✅ Summary generated:', summary);
     setSessionSummary(summary);
     setIsGeneratingSummary(false);
-
-    // Always move to SUMMARY state (not REVIEW)
-    console.log('🔄 Setting app state to SUMMARY');
     setAppState('SUMMARY');
   };
 
@@ -640,7 +587,6 @@ export default function App() {
 
     // Check if user is authenticated
     if (!isAuthenticated) {
-      console.log('🔐 User not authenticated, showing login modal');
       setShowLoginModal(true);
       return;
     }
@@ -652,7 +598,6 @@ export default function App() {
         summary: sessionSummary,
         transcript: transcript,
       });
-      console.log('✅ Session saved successfully:', sessionId);
       setSaveSuccess(true);
       // Reset after 2 seconds and reload
       setTimeout(() => {
@@ -667,8 +612,6 @@ export default function App() {
   };
 
   const handleLoginSuccess = async () => {
-    console.log('✅ User logged in successfully, generating summary...');
-    // Close modal and proceed with ending session
     setShowLoginModal(false);
     // Wait a brief moment for auth state to update
     setTimeout(() => {
@@ -727,7 +670,7 @@ export default function App() {
   );
 
   const SessionView = () => (
-    <div className="relative z-10 flex flex-col h-screen">
+    <div className="relative z-10 flex flex-col h-screen" style={{ pointerEvents: 'auto' }}>
       {/* Left Sidebar: Memory Garden Trigger */}
       <div className="absolute left-0 top-0 bottom-0 flex items-center z-30">
         <button
@@ -781,7 +724,11 @@ export default function App() {
           <LanguageSwitcher />
           {/* NEW: Settings Button */}
           <button
-            onClick={() => setShowSettings(true)}
+            onClick={(e) => {
+              console.log('Settings button clicked!', { isConnected, e });
+              e.stopPropagation();
+              setShowSettings(true);
+            }}
             className="p-2 hover:bg-white/10 rounded-full transition-colors"
             title={t('settings:title')}
           >
@@ -791,19 +738,7 @@ export default function App() {
       </div>
 
       {/* Central Visual Area */}
-      <div className="flex-1 flex flex-col items-center justify-center relative p-6">
-
-        {/* Real-time Subtitles - Centered to avoid overlap with mic button area */}
-        <VoiceSubtitle
-          text={subtitleText}
-          isVisible={showSubtitle && isConnected}
-          role={subtitleRole}
-          position="center"
-          typewriterEffect={false} // Disable typewriter for real-time updates
-          maxWidth="80%"
-          opacity={0.7}
-          fontSize="text-xl md:text-2xl"
-        />
+      <div className="flex-1 flex flex-col items-center justify-center relative p-6" style={{ pointerEvents: 'none' }}>
 
         {/* Connection Status Messages */}
         {isConnecting && (
@@ -831,7 +766,7 @@ export default function App() {
       </div>
 
       {/* Bottom Controls */}
-      <div className="p-8 flex flex-col items-center gap-6 z-20">
+      <div className="p-8 flex flex-col items-center gap-6 z-20 pointer-events-auto">
 
         {/* Unified Voice Control Card - Soundwave + Mic Button */}
         <VoiceControlCard
@@ -862,7 +797,7 @@ export default function App() {
             px-4 py-2 rounded-lg
             border border-[#0081A7]/30 hover:border-[#00AFCC]/60
             bg-[#0081A7]/5 hover:bg-[#0081A7]/15
-            mt-2
+            mt-2 pointer-events-auto relative z-50
           "
         >
           <LogOut size={14} />
@@ -874,7 +809,6 @@ export default function App() {
 
   // NEW: Summary View - Shows AI-generated summary before full transcript
   const SummaryView = () => {
-    console.log('📄 SummaryView rendered, sessionSummary:', sessionSummary);
     if (!sessionSummary) {
       // Show loading or fallback if summary not available
       return (
@@ -962,7 +896,7 @@ export default function App() {
 
 
   return (
-    <div className={`relative w-full h-screen bg-black selection:bg-white/20 ${appState === 'SUMMARY' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+    <div className={`relative w-full h-screen bg-black selection:bg-white/20 ${appState === 'SUMMARY' ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ pointerEvents: 'auto' }}>
 
       {/* Background Visuals - Always active now, uses default or custom photo */}
       <ParticleCanvas
@@ -1026,7 +960,7 @@ export default function App() {
 
       {/* Memory Garden Loading Overlay */}
       {isLoadingHistory && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto">
           <div className="text-center space-y-4">
             <div className="w-12 h-12 border-t-2 border-[#EBD671] rounded-full animate-spin mx-auto" />
             <p className="text-white/80 font-serif tracking-widest">{t('session:loading.loadingMemories')}</p>

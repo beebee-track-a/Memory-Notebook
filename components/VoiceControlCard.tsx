@@ -36,8 +36,10 @@ const VoiceControlCard: React.FC<VoiceControlCardProps> = ({
         px-6 py-4
         backdrop-blur-sm
         shadow-xl
+        relative
+        z-50
       "
-      style={{ width, maxWidth: '90vw' }}
+      style={{ width, maxWidth: '90vw', pointerEvents: 'auto' }}
     >
       {/* Horizontal layout: soundwave left, mic right */}
       <div className="flex items-center justify-between gap-4">

@@ -91,7 +91,7 @@ const MicButton: React.FC<MicButtonProps> = ({
         viewBox="0 0 24 24"
         stroke="currentColor"
         strokeWidth="2"
-        className={`w-[20px] h-[20px] transition-transform duration-200 ${
+        className={`w-[20px] h-[20px] transition-transform duration-200 pointer-events-none ${
           isRecording ? 'scale-110' : 'scale-100'
         }`}
       >
