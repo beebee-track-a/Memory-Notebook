@@ -1,0 +1,23 @@
+{
+  "title": "背景设置",
+  "sections": {
+    "customPhotos": "自定义照片",
+    "yourPhotos": "您的照片",
+    "defaultBackground": "默认背景"
+  },
+  "actions": {
+    "uploadPhoto": "上传照片"
+  },
+  "instructions": {
+    "uploadLimit": "最多上传 5 张照片自定义背景",
+    "usingCustom": "正在使用您的自定义照片。再次点击可切换回默认背景。",
+    "usingDefault": "正在使用精美的默认背景，自动轮换。",
+    "clickToUse": "• 点击照片将其设为背景",
+    "clickToRevert": "• 再次点击切换回默认背景",
+    "hoverToDelete": "• 悬停并点击垃圾桶图标删除照片"
+  },
+  "tooltips": {
+    "deletePhoto": "删除照片",
+    "customBackground": "自定义背景"
+  }
+}
