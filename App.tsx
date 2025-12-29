@@ -680,6 +680,11 @@ export default function App() {
 
   const LandingView = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen text-center p-6">
+      {/* Language Switcher - Top Right */}
+      <div className="absolute top-6 right-6 z-20">
+        <LanguageSwitcher />
+      </div>
+
       <h1 className="text-5xl md:text-7xl font-serif tracking-wide mb-4 text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-500 animate-pulse">
         {t('common:brand')}
       </h1>
