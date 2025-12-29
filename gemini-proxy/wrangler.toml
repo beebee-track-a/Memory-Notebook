@@ -44,3 +44,8 @@ ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:5173,https://staging.y
 # Observability
 [observability]
 enabled = true
+
+# Smart Placement: Run worker closer to the backend (Google API in US)
+# This helps China users by routing through US/EU nodes instead of China nodes
+[placement]
+mode = "smart"
