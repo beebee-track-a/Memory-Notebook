@@ -30,11 +30,11 @@ name = "gemini-live-proxy-staging"
 [env.staging.vars]
 ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:5173,https://staging.your-app.com"
 
-# Optional: Custom domain routing
-# Uncomment and configure if you have a custom domain
+# Custom domain routing (required for China access - workers.dev is blocked)
+# Uncomment and configure with your domain
 # [[routes]]
-# pattern = "gemini-proxy.yourdomain.com/*"
-# zone_name = "yourdomain.com"
+# pattern = "api.voiceto.me/*"
+# zone_name = "voiceto.me"
 
 # Optional: Durable Objects for rate limiting (advanced)
 # [[durable_objects.bindings]]
