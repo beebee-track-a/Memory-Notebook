@@ -1,0 +1,51 @@
+# Cloudflare Worker Configuration for Gemini Live API Proxy
+# Documentation: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "gemini-live-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Environment variables (non-sensitive)
+[vars]
+# Comma-separated list of allowed origins for CORS
+# Leave empty to allow all origins (not recommended for production)
+ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:5173"
+
+# Secrets (sensitive data - set via `wrangler secret put <NAME>`)
+# Run: wrangler secret put GEMINI_API_KEY
+# This allows the worker to use a server-side API key instead of client-passing
+
+# Production environment
+[env.production]
+name = "gemini-live-proxy"
+
+[env.production.vars]
+# Update with your production domains
+ALLOWED_ORIGINS = "https://your-app.com,https://www.your-app.com"
+
+# Staging/Development environment
+[env.staging]
+name = "gemini-live-proxy-staging"
+
+[env.staging.vars]
+ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:5173,https://staging.your-app.com"
+
+# Custom domain routing (required for China access - workers.dev is blocked)
+# Uncomment and configure with your domain
+# [[routes]]
+# pattern = "api.voiceto.me/*"
+# zone_name = "voiceto.me"
+
+# Optional: Durable Objects for rate limiting (advanced)
+# [[durable_objects.bindings]]
+# name = "RATE_LIMITER"
+# class_name = "RateLimiter"
+
+# Observability
+[observability]
+enabled = true
+
+# Smart Placement: Run worker closer to the backend (Google API in US)
+# This helps China users by routing through US/EU nodes instead of China nodes
+[placement]
+mode = "smart"

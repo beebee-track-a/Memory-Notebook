@@ -179,10 +179,23 @@ export const useGeminiLive = (
       inputAnalyser.connect(scriptProcessor);
       scriptProcessor.connect(inputCtx.destination);
 
-      // 5. Initialize Gemini Client
+      // 5. Initialize Gemini Client (with optional Cloudflare proxy for China users)
       console.log('🔑 Initializing Gemini with API key:', apiKey?.substring(0, 20) + '...');
-      const ai = new GoogleGenAI({ apiKey });
-      const model = 'gemini-2.5-flash-native-audio-preview-12-2025';
+
+      const useProxy = import.meta.env.VITE_USE_PROXY === 'true';
+      const proxyUrl = import.meta.env.VITE_GEMINI_PROXY_URL;
+
+      const aiConfig: { apiKey: string; httpOptions?: { baseUrl: string } } = { apiKey };
+
+      if (useProxy && proxyUrl) {
+        console.log('🌐 Using Cloudflare proxy:', proxyUrl);
+        aiConfig.httpOptions = {
+          baseUrl: proxyUrl.endsWith('/') ? proxyUrl : proxyUrl + '/'
+        };
+      }
+
+      const ai = new GoogleGenAI(aiConfig);
+      const model = 'gemini-2.5-flash-native-audio-preview-09-2025';
       console.log('📡 Using model:', model);
 
       // 6. Define Session Callbacks
