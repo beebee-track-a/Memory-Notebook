@@ -12,7 +12,9 @@
   "auth": {
     "googleFailed": "Google sign in failed",
     "authFailed": "Authentication failed",
-    "required": "Authentication required"
+    "required": "Authentication required",
+    "errorTitle": "Authentication Error",
+    "configHint": "Please check your .env file and ensure all VITE_FIREBASE_* variables are set. See FIREBASE_SETUP.md for setup instructions."
   },
   "summary": {
     "generationFailed": "Thank you for sharing this time together. Your thoughts and feelings matter.",

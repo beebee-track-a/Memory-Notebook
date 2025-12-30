@@ -12,7 +12,9 @@
   "auth": {
     "googleFailed": "Google 登录失败",
     "authFailed": "认证失败",
-    "required": "需要认证"
+    "required": "需要认证",
+    "errorTitle": "认证错误",
+    "configHint": "请检查您的 .env 文件，确保所有 VITE_FIREBASE_* 变量都已设置。请参阅 FIREBASE_SETUP.md 了解设置说明。"
   },
   "summary": {
     "generationFailed": "感谢您分享这段时光。您的想法和感受很重要。",

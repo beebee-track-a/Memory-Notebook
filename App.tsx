@@ -680,10 +680,15 @@ export default function App() {
 
   const LandingView = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen text-center p-6">
+      {/* Language Switcher - Top Right */}
+      <div className="absolute top-6 right-6 z-20">
+        <LanguageSwitcher />
+      </div>
+
       <h1 className="text-5xl md:text-7xl font-serif tracking-wide mb-4 text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-500 animate-pulse">
         {t('common:brand')}
       </h1>
-      <p className="text-gray-400 max-w-2xl mb-12 text-lg font-light whitespace-nowrap">
+      <p className="text-gray-400 max-w-2xl mb-12 text-lg font-light break-words text-center px-4">
         {t('landing:subtitle', { brand: t('common:brand') })}
       </p>
 
@@ -726,8 +731,40 @@ export default function App() {
     </div>
   );
 
-  const SessionView = () => (
-    <div className="relative z-10 flex flex-col h-screen">
+  const SessionView = () => {
+    // Use dynamic viewport height to account for browser UI (address bar, tabs, etc.)
+    const [viewportHeight, setViewportHeight] = useState('100dvh');
+    
+    useEffect(() => {
+      // Calculate available viewport height, accounting for browser UI
+      const updateViewportHeight = () => {
+        // Use CSS custom property for dynamic viewport height
+        const vh = window.innerHeight;
+        document.documentElement.style.setProperty('--vh', `${vh * 0.01}px`);
+        // Fallback: use dvh if supported, otherwise use calculated vh
+        if (typeof CSS !== 'undefined' && CSS.supports && CSS.supports('height', '100dvh')) {
+          setViewportHeight('100dvh');
+        } else {
+          setViewportHeight(`${vh}px`);
+        }
+      };
+      
+      updateViewportHeight();
+      window.addEventListener('resize', updateViewportHeight);
+      window.addEventListener('orientationchange', updateViewportHeight);
+      
+      // Update on visibility change (when browser UI shows/hides)
+      document.addEventListener('visibilitychange', updateViewportHeight);
+      
+      return () => {
+        window.removeEventListener('resize', updateViewportHeight);
+        window.removeEventListener('orientationchange', updateViewportHeight);
+        document.removeEventListener('visibilitychange', updateViewportHeight);
+      };
+    }, []);
+    
+    return (
+      <div className="relative z-10 flex flex-col overflow-hidden" style={{ height: viewportHeight, maxHeight: viewportHeight }}>
       {/* Left Sidebar: Memory Garden Trigger */}
       <div className="absolute left-0 top-0 bottom-0 flex items-center z-30">
         <button
@@ -756,7 +793,7 @@ export default function App() {
       </div>
 
       {/* Header / Top Bar */}
-      <div className="flex justify-between items-center p-6 text-white/50 z-20 pl-20">
+      <div className="flex justify-between items-center p-4 md:p-6 text-white/50 z-20 pl-20 flex-shrink-0">
         <VoiceStatusIndicator
           status={voiceStatus}
           showLabel={true}
@@ -791,7 +828,7 @@ export default function App() {
       </div>
 
       {/* Central Visual Area */}
-      <div className="flex-1 flex flex-col items-center justify-center relative p-6">
+      <div className="flex-1 flex flex-col items-center justify-center relative p-4 md:p-6 min-h-0 overflow-y-auto">
 
         {/* Real-time Subtitles - Centered to avoid overlap with mic button area */}
         <VoiceSubtitle
@@ -830,8 +867,8 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom Controls */}
-      <div className="p-8 flex flex-col items-center gap-6 z-20">
+      {/* Bottom Controls - Fixed at bottom, always visible */}
+      <div className="flex-shrink-0 p-4 md:p-8 pb-4 md:pb-8 flex flex-col items-center gap-4 md:gap-6 z-20" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
 
         {/* Unified Voice Control Card - Soundwave + Mic Button */}
         <VoiceControlCard
@@ -856,21 +893,26 @@ export default function App() {
         <button
           onClick={handleEndSessionClick}
           className="
-            flex items-center gap-2
-            text-sm text-[#0081A7] hover:text-[#00AFCC]
+            flex items-center justify-center gap-2
+            text-sm md:text-base text-[#0081A7] hover:text-[#00AFCC] active:text-[#00AFCC]
             transition-all duration-200
-            px-4 py-2 rounded-lg
-            border border-[#0081A7]/30 hover:border-[#00AFCC]/60
-            bg-[#0081A7]/5 hover:bg-[#0081A7]/15
-            mt-2
+            px-6 py-3 md:px-4 md:py-2 rounded-lg
+            border border-[#0081A7]/30 hover:border-[#00AFCC]/60 active:border-[#00AFCC]/60
+            bg-[#0081A7]/5 hover:bg-[#0081A7]/15 active:bg-[#0081A7]/15
+            min-h-[44px] min-w-[120px]
           "
+          style={{
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'manipulation'
+          }}
         >
-          <LogOut size={14} />
-          <span>{t('session:controls.endSession')}</span>
+          <LogOut size={16} className="md:w-[14px] md:h-[14px]" />
+          <span className="whitespace-nowrap">{t('session:controls.endSession')}</span>
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   // NEW: Summary View - Shows AI-generated summary before full transcript
   const SummaryView = () => {
@@ -961,8 +1003,36 @@ export default function App() {
   };
 
 
+  // Calculate dynamic viewport height for main container
+  const [mainViewportHeight, setMainViewportHeight] = useState('100dvh');
+  
+  useEffect(() => {
+    const updateMainViewportHeight = () => {
+      const vh = window.innerHeight;
+      if (typeof CSS !== 'undefined' && CSS.supports && CSS.supports('height', '100dvh')) {
+        setMainViewportHeight('100dvh');
+      } else {
+        setMainViewportHeight(`${vh}px`);
+      }
+    };
+    
+    updateMainViewportHeight();
+    window.addEventListener('resize', updateMainViewportHeight);
+    window.addEventListener('orientationchange', updateMainViewportHeight);
+    document.addEventListener('visibilitychange', updateMainViewportHeight);
+    
+    return () => {
+      window.removeEventListener('resize', updateMainViewportHeight);
+      window.removeEventListener('orientationchange', updateMainViewportHeight);
+      document.removeEventListener('visibilitychange', updateMainViewportHeight);
+    };
+  }, []);
+
   return (
-    <div className={`relative w-full h-screen bg-black selection:bg-white/20 ${appState === 'SUMMARY' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+    <div 
+      className={`relative w-full bg-black selection:bg-white/20 ${appState === 'SUMMARY' ? 'overflow-y-auto' : 'overflow-hidden'}`} 
+      style={{ height: mainViewportHeight, maxHeight: mainViewportHeight }}
+    >
 
       {/* Background Visuals - Always active now, uses default or custom photo */}
       <ParticleCanvas

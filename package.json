@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
+    "dev:https": "cross-env VITE_HTTPS=true vite --host",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -23,8 +24,10 @@
     "@tailwindcss/postcss": "^4.1.17",
     "@types/i18next": "^12.1.0",
     "@types/node": "^22.14.0",
+    "@vitejs/plugin-basic-ssl": "^2.1.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.22",
+    "cross-env": "^10.1.0",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

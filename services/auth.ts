@@ -9,7 +9,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { auth, initializationError } from './firebase';
 import { saveUserProfile } from './firebaseAPI';
 import type { UserProfile } from '../types';
 
@@ -49,7 +49,10 @@ export function getCurrentUser(): User | null {
  */
 export async function signInAnonymous(): Promise<User> {
   if (!auth) {
-    throw new Error('Firebase Auth not initialized. Please check your Firebase configuration.');
+    const errorMsg = initializationError 
+      ? `Firebase Auth not initialized: ${initializationError}`
+      : 'Firebase Auth not initialized. Please check your Firebase configuration. Make sure all VITE_FIREBASE_* environment variables are set in your .env file. See FIREBASE_SETUP.md for setup instructions.';
+    throw new Error(errorMsg);
   }
   try {
     const result = await signInAnonymously(auth);
@@ -75,7 +78,10 @@ export async function signInAnonymous(): Promise<User> {
  */
 export async function signInWithEmail(email: string, password: string): Promise<User> {
   if (!auth) {
-    throw new Error('Firebase Auth not initialized. Please check your Firebase configuration.');
+    const errorMsg = initializationError 
+      ? `Firebase Auth not initialized: ${initializationError}`
+      : 'Firebase Auth not initialized. Please check your Firebase configuration. Make sure all VITE_FIREBASE_* environment variables are set in your .env file. See FIREBASE_SETUP.md for setup instructions.';
+    throw new Error(errorMsg);
   }
   try {
     const result = await signInWithEmailAndPassword(auth, email, password);
@@ -99,7 +105,10 @@ export async function signInWithEmail(email: string, password: string): Promise<
  */
 export async function signInWithGoogle(): Promise<User> {
   if (!auth) {
-    throw new Error('Firebase Auth not initialized. Please check your Firebase configuration.');
+    const errorMsg = initializationError 
+      ? `Firebase Auth not initialized: ${initializationError}`
+      : 'Firebase Auth not initialized. Please check your Firebase configuration. Make sure all VITE_FIREBASE_* environment variables are set in your .env file. See FIREBASE_SETUP.md for setup instructions.';
+    throw new Error(errorMsg);
   }
   try {
     const provider = new GoogleAuthProvider();
@@ -138,7 +147,10 @@ interface SignUpData {
  */
 export async function signUpWithEmail(data: SignUpData): Promise<User> {
   if (!auth) {
-    throw new Error('Firebase Auth not initialized. Please check your Firebase configuration.');
+    const errorMsg = initializationError 
+      ? `Firebase Auth not initialized: ${initializationError}`
+      : 'Firebase Auth not initialized. Please check your Firebase configuration. Make sure all VITE_FIREBASE_* environment variables are set in your .env file. See FIREBASE_SETUP.md for setup instructions.';
+    throw new Error(errorMsg);
   }
   try {
     const result = await createUserWithEmailAndPassword(auth, data.email, data.password);
@@ -176,7 +188,10 @@ export async function signUpWithEmail(data: SignUpData): Promise<User> {
  */
 export async function signOut(): Promise<void> {
   if (!auth) {
-    throw new Error('Firebase Auth not initialized. Please check your Firebase configuration.');
+    const errorMsg = initializationError 
+      ? `Firebase Auth not initialized: ${initializationError}`
+      : 'Firebase Auth not initialized. Please check your Firebase configuration. Make sure all VITE_FIREBASE_* environment variables are set in your .env file. See FIREBASE_SETUP.md for setup instructions.';
+    throw new Error(errorMsg);
   }
   try {
     await firebaseSignOut(auth);
