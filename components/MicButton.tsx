@@ -1,73 +1,102 @@
 import React from 'react';
-import { Mic, MicOff } from 'lucide-react';
+
+export type MicButtonState = 'idle' | 'connecting' | 'connected' | 'disconnecting' | 'error';
 
 interface MicButtonProps {
   isRecording: boolean;
   onClick: () => void;
-  size?: number; // Diameter in pixels (48-80)
-  glowColor?: string; // Color when recording
-  breathingDuration?: number; // Breathing light cycle duration in seconds
-  disabled?: boolean; // Disable button
+  state?: MicButtonState; // Visual state for better UX
+  disabled?: boolean;
+  size?: number; // Kept for compatibility
+  glowColor?: string; // Kept for compatibility but unused in new design
+  breathingDuration?: number; // Kept for compatibility but unused
 }
 
 const MicButton: React.FC<MicButtonProps> = ({
   isRecording,
   onClick,
-  size = 64,
-  glowColor = 'rgb(239, 68, 68)', // red-500
-  breathingDuration = 1.8,
+  state = 'idle',
   disabled = false,
 }) => {
+  // State-based styling
+  const stateStyles = {
+    idle: {
+      bg: 'bg-[#1a1a1a]',
+      border: 'border-[#333]',
+      text: 'text-[#888]',
+      hover: 'hover:bg-[#333] hover:text-white',
+      glow: '',
+    },
+    connecting: {
+      bg: 'bg-[#1a1a1a]',
+      border: 'border-blue-500/50',
+      text: 'text-blue-400',
+      hover: '',
+      glow: 'shadow-lg shadow-blue-500/30 animate-pulse',
+    },
+    connected: {
+      bg: 'bg-[#333]',
+      border: 'border-emerald-500/70',
+      text: 'text-emerald-400',
+      hover: 'hover:bg-[#3d3d3d]',
+      glow: 'shadow-lg shadow-emerald-500/40',
+    },
+    disconnecting: {
+      bg: 'bg-[#1a1a1a]',
+      border: 'border-orange-500/50',
+      text: 'text-orange-400',
+      hover: '',
+      glow: 'shadow-lg shadow-orange-500/30 animate-pulse',
+    },
+    error: {
+      bg: 'bg-[#1a1a1a]',
+      border: 'border-red-500/50',
+      text: 'text-red-400',
+      hover: 'hover:bg-[#2a1a1a]',
+      glow: 'shadow-lg shadow-red-500/30',
+    },
+  };
+
+  const currentStyle = stateStyles[state];
+
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={`
-        relative rounded-full transition-all duration-300 ease-out
-        flex items-center justify-center
-        ${isRecording
-          ? 'scale-110 shadow-2xl'
-          : 'scale-100 hover:scale-105 shadow-lg'
-        }
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        w-[44px] h-[44px] rounded-full
+        ${currentStyle.bg} ${currentStyle.border} ${currentStyle.text}
+        ${currentStyle.hover} ${currentStyle.glow}
+        flex justify-center items-center
+        cursor-pointer
+        transition-all duration-300 ease-out
+        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black
       `}
-      style={{
-        width: `${size}px`,
-        height: `${size}px`,
-        backgroundColor: isRecording ? 'rgba(34, 197, 94, 0.15)' : 'rgba(99, 102, 241, 0.15)',
-        border: isRecording ? '2px solid rgba(34, 197, 94, 0.4)' : '2px solid rgba(99, 102, 241, 0.3)',
-      }}
-      aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+      aria-label={
+        state === 'connecting'
+          ? 'Connecting...'
+          : state === 'disconnecting'
+            ? 'Disconnecting...'
+            : isRecording
+              ? 'Stop recording'
+              : 'Start recording'
+      }
+      aria-live="polite"
+      aria-busy={state === 'connecting' || state === 'disconnecting'}
     >
-      {/* Breathing glow effect - always show, more subtle when not recording */}
-      <div
-        className="absolute inset-0 rounded-full"
-        style={{
-          background: `radial-gradient(circle, ${glowColor} 0%, transparent 70%)`,
-          animation: `breathing ${breathingDuration}s ease-in-out infinite`,
-          opacity: isRecording ? 1 : 0.5,
-        }}
-      />
-
-      {/* Pulsing ring when recording */}
-      {isRecording && (
-        <div
-          className="absolute inset-0 rounded-full animate-ping"
-          style={{
-            backgroundColor: glowColor,
-            opacity: 0.3,
-            animationDuration: `${breathingDuration}s`,
-          }}
-        />
-      )}
-
-      {/* Icon */}
-      <div className="relative z-10">
-        <Mic
-          size={size * 0.4}
-          className={`drop-shadow-lg ${isRecording ? 'text-red-400' : 'text-white/80'}`}
-        />
-      </div>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth="2"
+        className={`w-[20px] h-[20px] transition-transform duration-200 ${
+          isRecording ? 'scale-110' : 'scale-100'
+        }`}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+      </svg>
     </button>
   );
 };

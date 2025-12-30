@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User profiles - users can read/write their own profile
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // User sessions - users can read/write their own sessions
+      match /sessions/{sessionId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Chats - users can read/write chats they participate in
+    match /chats/{chatId} {
+      allow read: if request.auth != null &&
+                     request.auth.uid in resource.data.participants;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null &&
+                              request.auth.uid in resource.data.participants;
+
+      // Chat messages - users can read/write messages in chats they participate in
+      match /messages/{messageId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null &&
+                                request.auth.uid == resource.data.senderUid;
+      }
+    }
+
+    // Uploads - users can ONLY read/write their own uploads
+    match /uploads/{uploadId} {
+      allow read: if request.auth != null &&
+                     request.auth.uid == resource.data.uploaderUid;
+      allow create: if request.auth != null &&
+                       request.resource.data.uploaderUid == request.auth.uid;
+      allow update, delete: if request.auth != null &&
+                              request.auth.uid == resource.data.uploaderUid;
+    }
+  }
+}

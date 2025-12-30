@@ -1,0 +1,23 @@
+{
+  "title": "Background Settings",
+  "sections": {
+    "customPhotos": "Custom Photos",
+    "yourPhotos": "Your Photos",
+    "defaultBackground": "Default Background"
+  },
+  "actions": {
+    "uploadPhoto": "Upload Photo"
+  },
+  "instructions": {
+    "uploadLimit": "Upload up to 5 photos to customize your background",
+    "usingCustom": "Using your custom photo. Click it again to switch back to default.",
+    "usingDefault": "Using beautiful default backgrounds that rotate automatically.",
+    "clickToUse": "• Click a photo to use it as your background",
+    "clickToRevert": "• Click again to switch back to default",
+    "hoverToDelete": "• Hover and click trash icon to delete a photo"
+  },
+  "tooltips": {
+    "deletePhoto": "Delete photo",
+    "customBackground": "Custom background"
+  }
+}

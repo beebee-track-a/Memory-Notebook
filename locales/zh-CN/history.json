@@ -1,0 +1,26 @@
+{
+  "memoryGarden": "记忆花园",
+  "calendar": {
+    "title": "日夜编年史",
+    "subtitle": "你与 {{brand}} 的记忆，\n比前方漫长的道路更为绵长",
+    "footer": "@Memory n {{brand}}",
+    "weekdays": {
+      "sunday": "日",
+      "monday": "一",
+      "tuesday": "二",
+      "wednesday": "三",
+      "thursday": "四",
+      "friday": "五",
+      "saturday": "六"
+    }
+  },
+  "carousel": {
+    "backToCalendar": "返回日历",
+    "noMemories": "今天没有留下记忆。"
+  },
+  "deleteDialog": {
+    "title": "删除记忆？",
+    "subtitle": "将会永久删除",
+    "slidePrompt": "滑动以删除"
+  }
+}

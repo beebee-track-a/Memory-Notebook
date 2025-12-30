@@ -1,0 +1,25 @@
+{
+  "brand": "Hobbi",
+  "buttons": {
+    "close": "Close",
+    "back": "Back",
+    "save": "Save",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
+  "status": {
+    "idle": "Idle",
+    "connecting": "Connecting...",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "error": "Error"
+  },
+  "aria": {
+    "startRecording": "Start recording",
+    "stopRecording": "Stop recording",
+    "closeModal": "Close modal",
+    "deleteMemory": "Delete memory",
+    "changeLanguage": "Change language"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "controls": {
+    "endSession": "End Session & Save Summary",
+    "tapToSpeak": "Tap mic to speak",
+    "tapToTranslate": "Tap to translate",
+    "connectingLabel": "Gemini"
+  },
+  "loading": {
+    "startingChat": "STARTING THE CHAT...",
+    "generatingSummary": "GENERATING SUMMARY...",
+    "generatingSummaryHint": "This may take a moment",
+    "loadingMemories": "LOADING MEMORIES...",
+    "connectingToGemini": "Connecting to Gemini...",
+    "pleaseWait": "Please wait...",
+    "disconnecting": "Disconnecting..."
+  },
+  "summary": {
+    "title": "Session Complete",
+    "conversationSummary": "Conversation Summary",
+    "duration": "Duration",
+    "messages": "Messages",
+    "exchanges": "You/AI",
+    "savedSuccessfully": "Saved Successfully!"
+  },
+  "voiceControl": {
+    "liveIndicator": "● Live"
+  },
+  "errors": {
+    "connectionError": "Connection Error",
+    "reloadPage": "Reload Page"
+  }
+}

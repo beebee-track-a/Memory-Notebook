@@ -85,26 +85,29 @@ const VoiceSubtitle: React.FC<VoiceSubtitleProps> = ({
 
   const colors = role ? roleColors[role] : roleColors.default;
 
-  if (!isVisible || !text) return null;
+  // Remove early return to keep component mounted
+  // if (!isVisible || !text) return null;
 
   return (
     <div
-      className={`absolute ${positionClasses[position]} left-1/2 -translate-x-1/2 z-30 transition-all duration-500 ease-out ${
-        isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-      }`}
+      className={`absolute ${positionClasses[position]} left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-out ${isVisible && text ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+        }`}
       style={{
         maxWidth,
         contain: 'layout style paint',
         isolation: 'isolate',
+        minHeight: '120px', // Prevent layout shifts during typing
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
       }}
     >
       <div
-        className={`px-8 py-6 rounded-2xl border ${colors.border} shadow-2xl`}
+        className={`px-8 py-6 rounded-2xl border ${colors.border} shadow-2xl relative overflow-hidden`}
         style={{
-          backgroundColor: `rgba(0, 0, 0, ${opacity + 0.2})`,
-          boxShadow: `0 0 40px ${colors.bgAccent}`,
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
+          boxShadow: `0 8px 32px 0 ${colors.bgAccent}, inset 0 0 0 1px ${role === 'user' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`,
+          background: `rgba(10, 10, 10, 0.9)`, // High opacity static background (no blur)
+          backfaceVisibility: 'hidden', // Force stable compositing layer
           willChange: 'transform, opacity',
           transform: 'translateZ(0)',
           contain: 'layout style paint',
@@ -116,6 +119,10 @@ const VoiceSubtitle: React.FC<VoiceSubtitleProps> = ({
             textShadow: '0 2px 20px rgba(0, 0, 0, 0.5)',
             lineHeight: '1.6',
             wordBreak: 'break-word',
+            display: '-webkit-box',
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
           }}
         >
           {displayedText}
@@ -123,7 +130,7 @@ const VoiceSubtitle: React.FC<VoiceSubtitleProps> = ({
             <span className={`inline-block w-0.5 h-6 ${role === 'user' ? 'bg-blue-400/80' : role === 'assistant' ? 'bg-emerald-400/80' : 'bg-white/80'} ml-1 animate-pulse`} />
           )}
         </p>
-        
+
         {/* Optional: Translation hint */}
         {isFullyDisplayed && (
           <div className="mt-3 text-center">

@@ -1,0 +1,25 @@
+{
+  "connection": {
+    "failed": "Connection failed: {{message}}",
+    "noApiKey": "API Key missing. Please check .env file and restart dev server.",
+    "timeout": "Connection timed out"
+  },
+  "session": {
+    "saveFailed": "Failed to save session. Please try again.",
+    "loadingFailed": "Failed to load sessions",
+    "noSummary": "No session summary available"
+  },
+  "auth": {
+    "googleFailed": "Google sign in failed",
+    "authFailed": "Authentication failed",
+    "required": "Authentication required"
+  },
+  "summary": {
+    "generationFailed": "Thank you for sharing this time together. Your thoughts and feelings matter.",
+    "loadingSummary": "Loading summary..."
+  },
+  "photos": {
+    "uploadLimit": "Maximum 5 photos allowed. Please delete one first.",
+    "uploadFailed": "Failed to upload photo"
+  }
+}

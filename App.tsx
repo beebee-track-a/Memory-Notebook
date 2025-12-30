@@ -1,17 +1,30 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Mic, MicOff, Save, Sparkles, X, Volume2, Volume1, Settings } from 'lucide-react';
+import { Upload, Mic, MicOff, Save, Sparkles, X, Volume2, Volume1, Settings, LogOut } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
-import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary } from './types';
+import { AppState, SessionState, PhotoData, MemoryTurn, UploadedPhoto, SessionSummary, HistoryViewState, HistoryEntry } from './types';
 import { SYSTEM_INSTRUCTION, DEFAULT_PHOTO_URLS } from './constants';
 import ParticleCanvas from './components/ParticleCanvas';
 import AmbiencePlayer from './components/AmbiencePlayer';
 import VoiceSubtitle from './components/VoiceSubtitle';
-import MicButton from './components/MicButton';
+import MicButton, { MicButtonState } from './components/MicButton';
 import VoiceStatusIndicator, { VoiceConnectionStatus } from './components/VoiceStatusIndicator';
 import SettingsPanel from './components/SettingsPanel';
+import { CalendarView, CarouselView, groupSessionsByDate } from './components/HistoryViews';
+import SoundWave from './components/SoundWave';
+import VoiceControlCard from './components/VoiceControlCard';
+import LoginModal from './components/LoginModal';
+import LanguageSwitcher from './components/LanguageSwitcher';
 import { useGeminiLive } from './hooks/useGeminiLive';
+import { useAuth } from './hooks/useAuth';
+import { saveSession, getUserSessions, deleteSession } from './services/firebaseAPI';
+import type { SupportedLanguage } from './i18n/types';
+import { formatDate, formatTime } from './i18n/utils';
 
 export default function App() {
+  // i18n hooks
+  const { t, i18n } = useTranslation();
+
   // Debug: Check API key on component mount
   useEffect(() => {
     const apiKey =
@@ -37,8 +50,18 @@ export default function App() {
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.5);
 
+  // Disconnection state for better UX
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+
   // Visual Reactivity
   const [audioLevel, setAudioLevel] = useState(0); // 0.0 - 1.0 for visuals
+  const [inputAudioLevel, setInputAudioLevel] = useState(0); // 0.0 - 1.0 for input microphone level
+  // Performance: Sync audio level to a ref to pass to canvas without re-rendering
+  const audioLevelRef = useRef(0);
+
+  useEffect(() => {
+    audioLevelRef.current = audioLevel;
+  }, [audioLevel]);
 
   // Voice UI States
   const [voiceStatus, setVoiceStatus] = useState<VoiceConnectionStatus>('idle');
@@ -47,7 +70,6 @@ export default function App() {
   const [subtitleText, setSubtitleText] = useState<string>('');
   const [subtitleRole, setSubtitleRole] = useState<'user' | 'assistant' | null>(null);
   const [showSubtitle, setShowSubtitle] = useState<boolean>(false);
-  const subtitleUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // NEW: Photo Management (for background particle effects)
   const [defaultPhotoIndex, setDefaultPhotoIndex] = useState(0); // Which default photo to use
@@ -58,6 +80,22 @@ export default function App() {
   // NEW: Session Tracking (for summary generation)
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+
+  // Memory Garden State
+  const [historyViewState, setHistoryViewState] = useState<HistoryViewState>('HIDDEN');
+  const [selectedDateForHistory, setSelectedDateForHistory] = useState<string>('');
+  const [selectedHistoryEntries, setSelectedHistoryEntries] = useState<HistoryEntry[]>([]);
+
+  // Memory Garden Firebase Data
+  const [sessionsByDate, setSessionsByDate] = useState<Record<string, HistoryEntry[]>>({});
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Firebase Authentication
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Use the Gemini Live hook
   const {
@@ -68,7 +106,7 @@ export default function App() {
     disconnect: disconnectGemini,
     analysers
   } = useGeminiLive(
-    // onTranscript callback - store both user and assistant transcriptions immediately
+    // onTranscript callback - store transcriptions and show as subtitle
     (text: string, role: 'user' | 'assistant') => {
       console.log('📝 Transcript received:', { role, text });
       // Store both user and assistant transcriptions immediately in background
@@ -81,6 +119,11 @@ export default function App() {
         console.log('✅ Transcript stored. Total turns:', updated.length);
         return updated;
       });
+
+      // Show complete text as subtitle
+      setSubtitleText(text);
+      setSubtitleRole(role);
+      setShowSubtitle(true);
     },
     // onTurnComplete callback
     () => {
@@ -88,30 +131,8 @@ export default function App() {
     },
     // setAudioLevel callback
     setAudioLevel,
-    // onPartialTranscript callback - for real-time subtitles (throttled to reduce flashing)
-    (text: string, role: 'user' | 'assistant') => {
-      if (text.trim()) {
-        // Clear any pending update
-        if (subtitleUpdateTimeoutRef.current) {
-          clearTimeout(subtitleUpdateTimeoutRef.current);
-        }
-
-        // Throttle updates to max 10 per second (100ms intervals) to prevent flashing
-        subtitleUpdateTimeoutRef.current = setTimeout(() => {
-          setSubtitleText(text.trim());
-          setSubtitleRole(role);
-          setShowSubtitle(true);
-        }, 100);
-      } else {
-        // Clear subtitle when text is empty (immediate, no throttle)
-        if (subtitleUpdateTimeoutRef.current) {
-          clearTimeout(subtitleUpdateTimeoutRef.current);
-        }
-        setShowSubtitle(false);
-        setSubtitleText('');
-        setSubtitleRole(null);
-      }
-    }
+    // onPartialTranscript callback - not used for subtitles anymore
+    undefined
   );
 
   // Update voice status based on connection state
@@ -121,11 +142,14 @@ export default function App() {
       setVoiceStatus('connecting');
     } else if (isConnected) {
       setVoiceStatus('connected');
+      setIsDisconnecting(false); // Reset disconnecting state when connected
     } else if (geminiError) {
       setVoiceStatus('error');
+      setIsDisconnecting(false); // Reset disconnecting state on error
       console.error('❌ Gemini Error:', geminiError);
     } else {
       setVoiceStatus('idle');
+      setIsDisconnecting(false); // Reset disconnecting state when idle
     }
   }, [isConnecting, isConnected, geminiError]);
 
@@ -139,30 +163,68 @@ export default function App() {
     }
   }, [audioLevel, isConnected]);
 
+  // Monitor input audio level for SoundWave visualization
+  useEffect(() => {
+    if (!analysers.input || !isConnected) {
+      setInputAudioLevel(0);
+      return;
+    }
+
+    const analyser = analysers.input;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    let animationFrameId: number;
+
+    const updateInputLevel = () => {
+      analyser.getByteFrequencyData(dataArray);
+
+      // Calculate average volume from frequency data
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+
+      // Normalize to 0.0 - 1.0 range (byte values are 0-255)
+      const normalizedLevel = average / 255;
+
+      setInputAudioLevel(normalizedLevel);
+      animationFrameId = requestAnimationFrame(updateInputLevel);
+    };
+
+    updateInputLevel();
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [analysers.input, isConnected]);
+
   // Auto-clear subtitles after period of inactivity
   useEffect(() => {
     if (!showSubtitle || !subtitleText) return;
 
-    // Clear subtitle after 5 seconds of no updates
+    // Clear subtitle after 10 seconds of no updates (increased for better readability)
     const clearTimer = setTimeout(() => {
       setShowSubtitle(false);
       setSubtitleText('');
       setSubtitleRole(null);
-    }, 5000);
+    }, 10000);
 
     return () => clearTimeout(clearTimer);
   }, [subtitleText, showSubtitle]);
 
-  // Cleanup throttle timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (subtitleUpdateTimeoutRef.current) {
-        clearTimeout(subtitleUpdateTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // --- Helpers ---
+
+  // Map voice connection status to MicButton visual state
+  const getMicButtonState = (): MicButtonState => {
+    if (geminiError) return 'error';
+    if (isDisconnecting) return 'disconnecting';
+    if (isConnecting) return 'connecting';
+    if (isConnected) return 'connected';
+    return 'idle';
+  };
 
   // NEW: Get the current photo URL for particle effects
   const getCurrentPhotoUrl = (): string => {
@@ -207,20 +269,20 @@ export default function App() {
   };
 
   const startMemoryProcess = () => {
-     setAppState('RENDERING');
-     // Simulate rendering time for effect
-     setTimeout(() => {
-         setAppState('SESSION');
-         // Don't auto-connect anymore - user will click mic button
-         setIsMusicPlaying(true);
-     }, 2500);
+    setAppState('RENDERING');
+    // Simulate rendering time for effect
+    setTimeout(() => {
+      setAppState('SESSION');
+      // Don't auto-connect anymore - user will click mic button
+      setIsMusicPlaying(true);
+    }, 2500);
   };
 
 
   // NEW: Photo Management Handlers
   const handlePhotoUpload = (file: File) => {
     if (uploadedPhotos.length >= 5) {
-      alert('Maximum 5 photos allowed. Please delete one first.');
+      alert(t('errors:photos.uploadLimit'));
       return;
     }
 
@@ -256,21 +318,84 @@ export default function App() {
     }
   };
 
-  // --- Gemini Live Integration ---
-
-  const handleMicClick = async () => {
-    console.log('🎤 Mic button clicked', { isConnected, isConnecting });
-
-    if (isConnected) {
-      // If already connected, disconnect
-      console.log('🔌 Disconnecting...');
-      disconnectGemini();
-      setSessionState('IDLE');
+  // --- Memory Garden Handlers ---
+  const openHistoryCalendar = async () => {
+    // Check authentication first
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing login modal');
+      setShowLoginModal(true);
       return;
     }
 
-    if (isConnecting) {
-      console.log('⏳ Already connecting, please wait...');
+    // Load sessions from Firebase
+    setIsLoadingHistory(true);
+    try {
+      const sessions = await getUserSessions(90); // Last 90 days
+      const grouped = groupSessionsByDate(sessions);
+      setSessionsByDate(grouped);
+      setHistoryViewState('CALENDAR');
+    } catch (error) {
+      console.error('Failed to load session history:', error);
+      // Optionally show error message to user
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const closeHistory = () => setHistoryViewState('HIDDEN');
+
+  const handleDateSelect = (date: string, entries: HistoryEntry[]) => {
+    setSelectedDateForHistory(date);
+    setSelectedHistoryEntries(entries);
+    setHistoryViewState('CAROUSEL');
+  };
+
+  const handleDeleteHistoryEntry = async (id: string) => {
+    try {
+      // Delete from Firebase
+      await deleteSession(id);
+
+      // Remove from local state
+      setSelectedHistoryEntries(prev => prev.filter(entry => entry.id !== id));
+
+      // Also remove from sessionsByDate to update calendar
+      setSessionsByDate(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(date => {
+          updated[date] = updated[date].filter(entry => entry.id !== id);
+          if (updated[date].length === 0) {
+            delete updated[date]; // Remove empty dates
+          }
+        });
+        return updated;
+      });
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+      // Optionally show error message
+    }
+  };
+
+  // --- Gemini Live Integration ---
+
+  const handleMicClick = async () => {
+    console.log('🎤 Mic button clicked', { isConnected, isConnecting, isDisconnecting });
+
+    if (isConnected) {
+      // If already connected, disconnect with visual feedback
+      console.log('🔌 Disconnecting...');
+      setIsDisconnecting(true);
+
+      // Small delay to ensure user sees the disconnecting state
+      setTimeout(() => {
+        disconnectGemini();
+        setSessionState('IDLE');
+        setIsDisconnecting(false);
+      }, 300); // 300ms delay for visual feedback
+      return;
+    }
+
+    if (isConnecting || isDisconnecting) {
+      console.log('⏳ Already connecting/disconnecting, please wait...');
       return;
     }
 
@@ -289,9 +414,9 @@ export default function App() {
       });
 
       if (!apiKey) {
-          console.error('❌ API Key missing in Vite environment');
-          alert("API Key missing. Please check .env file and restart dev server.");
-          return;
+        console.error('❌ API Key missing in Vite environment');
+        alert(t('errors:connection.noApiKey'));
+        return;
       }
       // Photo is no longer required - we use default backgrounds
       // if (!photoData) {
@@ -312,8 +437,19 @@ export default function App() {
       console.log('✅ connectGemini call completed - connection should be established');
     } catch (error) {
       console.error('💥 Error in handleMicClick:', error);
-      alert(`Connection failed: ${error instanceof Error ? error.message : String(error)}`);
+      alert(t('errors:connection.failed', { message: error instanceof Error ? error.message : String(error) }));
     }
+  };
+
+  // Helper function to generate language-specific summary prompts
+  const getSummaryPrompt = (language: SupportedLanguage, conversationText: string): string => {
+    const prompts: Record<SupportedLanguage, string> = {
+      'en': `Please provide a warm, empathetic 2-3 sentence summary of the following conversation between a user and their voice companion. Focus on the key themes, emotions, and topics discussed:\n\n${conversationText}`,
+
+      'zh-CN': `请为以下用户与语音伴侣之间的对话提供一个温暖、富有同理心的 2-3 句话摘要。重点关注讨论的关键主题、情感和话题：\n\n${conversationText}`,
+    };
+
+    return prompts[language] || prompts['en'];
   };
 
   // NEW: Generate AI summary of the conversation using Gemini API
@@ -357,6 +493,10 @@ export default function App() {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
 
+        // Get language-specific prompt
+        const currentLanguage = i18n.language as SupportedLanguage;
+        const summaryPrompt = getSummaryPrompt(currentLanguage, conversationText);
+
         // Call Gemini API to generate summary
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -366,7 +506,7 @@ export default function App() {
             body: JSON.stringify({
               contents: [{
                 parts: [{
-                  text: `Please provide a warm, empathetic 2-3 sentence summary of the following conversation between a user and their voice companion. Focus on the key themes, emotions, and topics discussed:\n\n${conversationText}`
+                  text: summaryPrompt
                 }]
               }],
               generationConfig: {
@@ -438,9 +578,24 @@ export default function App() {
     };
   };
 
+  const handleEndSessionClick = () => {
+    // Check authentication BEFORE allowing summary generation
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing login modal');
+      setShowLoginModal(true);
+      return;
+    }
+
+    // User is authenticated, proceed with ending session
+    endSession();
+  };
+
   const endSession = async () => {
     disconnectGemini();
     setIsMusicPlaying(false);
+
+    // Show loading UI for summary generation
+    setIsGeneratingSummary(true);
 
     // Wait 3 seconds to let rate limits reset after Live API disconnection
     console.log('⏳ Waiting 3 seconds before generating summary...');
@@ -468,10 +623,57 @@ export default function App() {
 
     console.log('✅ Summary generated:', summary);
     setSessionSummary(summary);
+    setIsGeneratingSummary(false);
 
     // Always move to SUMMARY state (not REVIEW)
     console.log('🔄 Setting app state to SUMMARY');
     setAppState('SUMMARY');
+  };
+
+  // --- Save Session Handler ---
+
+  const handleSaveSession = async () => {
+    if (!sessionSummary) {
+      console.error('❌ No session summary to save');
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing login modal');
+      setShowLoginModal(true);
+      return;
+    }
+
+    // Save session to Firebase
+    setIsSaving(true);
+    try {
+      const sessionId = await saveSession({
+        summary: sessionSummary,
+        transcript: transcript,
+      });
+      console.log('✅ Session saved successfully:', sessionId);
+      setSaveSuccess(true);
+      // Reset after 2 seconds and reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (error) {
+      console.error('❌ Failed to save session:', error);
+      alert(t('errors:session.saveFailed'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLoginSuccess = async () => {
+    console.log('✅ User logged in successfully, generating summary...');
+    // Close modal and proceed with ending session
+    setShowLoginModal(false);
+    // Wait a brief moment for auth state to update
+    setTimeout(() => {
+      endSession();
+    }, 500);
   };
 
   // --- UI Components ---
@@ -479,10 +681,10 @@ export default function App() {
   const LandingView = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen text-center p-6">
       <h1 className="text-5xl md:text-7xl font-serif tracking-wide mb-4 text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-500 animate-pulse">
-        Hobbi
+        {t('common:brand')}
       </h1>
       <p className="text-gray-400 max-w-2xl mb-12 text-lg font-light whitespace-nowrap">
-       A world built for you with Hobbi — where imagination becomes true companionship
+        {t('landing:subtitle', { brand: t('common:brand') })}
       </p>
 
       {appState === 'LANDING' ? (
@@ -490,10 +692,10 @@ export default function App() {
           onClick={startChatSession}
           className="group cursor-pointer relative px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 transition-all rounded-full overflow-hidden backdrop-blur-sm"
         >
-            <span className="relative z-10 flex items-center gap-2 text-white tracking-widest uppercase text-sm font-semibold">
-                <Sparkles size={16} /> Have a chat
-            </span>
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <span className="relative z-10 flex items-center gap-2 text-white tracking-widest uppercase text-sm font-semibold">
+            <Sparkles size={16} /> {t('landing:startButton')}
+          </span>
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
       ) : null}
     </div>
@@ -501,129 +703,172 @@ export default function App() {
 
   const UploadPreview = () => (
     <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-6 animate-fade-in">
-        {photoData && (
-            <div className="relative w-full max-w-md aspect-[3/4] md:aspect-square rounded-lg overflow-hidden shadow-2xl border border-white/10 mb-8">
-                <img src={photoData.previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/20" />
-            </div>
-        )}
-        <div className="flex gap-4">
-             <button
-                onClick={() => setAppState('LANDING')}
-                className="px-6 py-3 rounded-full border border-white/20 text-white/60 hover:text-white hover:bg-white/5 transition-all"
-             >
-                Try Another
-             </button>
-             <button
-                onClick={startMemoryProcess}
-                className="px-8 py-3 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all shadow-lg shadow-white/10"
-             >
-                Visualize & Speak
-             </button>
+      {photoData && (
+        <div className="relative w-full max-w-md aspect-[3/4] md:aspect-square rounded-lg overflow-hidden shadow-2xl border border-white/10 mb-8">
+          <img src={photoData.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/20" />
         </div>
+      )}
+      <div className="flex gap-4">
+        <button
+          onClick={() => setAppState('LANDING')}
+          className="px-6 py-3 rounded-full border border-white/20 text-white/60 hover:text-white hover:bg-white/5 transition-all"
+        >
+          {t('landing:tryAnother')}
+        </button>
+        <button
+          onClick={startMemoryProcess}
+          className="px-8 py-3 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all shadow-lg shadow-white/10"
+        >
+          {t('landing:visualizeAndSpeak')}
+        </button>
+      </div>
     </div>
   );
 
   const SessionView = () => (
     <div className="relative z-10 flex flex-col h-screen">
-        {/* Header / Top Bar */}
-        <div className="flex justify-between items-center p-6 text-white/50 z-20">
-            <VoiceStatusIndicator
-              status={voiceStatus}
-              showLabel={true}
-              label="Gemini"
-              size={10}
-              glowIntensity={8}
-            />
-            <div className="flex items-center gap-4">
-                 <button onClick={() => setMusicVolume(v => v === 0 ? 0.5 : 0)}>
-                     {musicVolume === 0 ? <X size={16}/> : <Volume2 size={16} />}
-                 </button>
-                 <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={musicVolume}
-                    onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                    className="w-20 accent-white h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                 />
-                 {/* NEW: Settings Button */}
-                 <button
-                   onClick={() => setShowSettings(true)}
-                   className="p-2 hover:bg-white/10 rounded-full transition-colors"
-                   title="Background Settings"
-                 >
-                   <Settings size={18} />
-                 </button>
-            </div>
+      {/* Left Sidebar: Memory Garden Trigger */}
+      <div className="absolute left-0 top-0 bottom-0 flex items-center z-30">
+        <button
+          onClick={openHistoryCalendar}
+          className="group flex flex-col items-center gap-4 p-4 hover:bg-white/5 transition-all h-32 md:h-auto rounded-r-2xl border-y border-r border-transparent hover:border-white/10"
+        >
+          {/* Decorative line - Top - Saturn Yellow */}
+          <div className="w-[1px] h-12 bg-gradient-to-b from-transparent via-[#EBD671]/60 to-transparent group-hover:via-[#EBD671] transition-all" />
+
+          {/* Text - Saturn Yellow */}
+          <span
+            className={`text-[14px] uppercase tracking-[0.25em] text-[#EBD671]/70 group-hover:text-[#EBD671] transition-colors ${
+              i18n.language === 'zh-CN' ? '' : 'rotate-180'
+            }`}
+            style={{
+              writingMode: i18n.language === 'zh-CN' ? 'vertical-rl' : 'vertical-rl',
+              textOrientation: i18n.language === 'zh-CN' ? 'upright' : 'mixed'
+            }}
+          >
+            {t('history:memoryGarden')}
+          </span>
+
+          {/* Decorative line - Bottom - Saturn Yellow */}
+          <div className="w-[1px] h-12 bg-gradient-to-b from-transparent via-[#EBD671]/60 to-transparent group-hover:via-[#EBD671] transition-all" />
+        </button>
+      </div>
+
+      {/* Header / Top Bar */}
+      <div className="flex justify-between items-center p-6 text-white/50 z-20 pl-20">
+        <VoiceStatusIndicator
+          status={voiceStatus}
+          showLabel={true}
+          label={t('session:controls.connectingLabel')}
+          size={10}
+          glowIntensity={8}
+        />
+        <div className="flex items-center gap-4">
+          <button onClick={() => setMusicVolume(v => v === 0 ? 0.5 : 0)}>
+            {musicVolume === 0 ? <X size={16} /> : <Volume2 size={16} />}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={musicVolume}
+            onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+            className="w-20 accent-white h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+          />
+          {/* Language Switcher */}
+          <LanguageSwitcher />
+          {/* NEW: Settings Button */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            title={t('settings:title')}
+          >
+            <Settings size={18} />
+          </button>
         </div>
+      </div>
 
-        {/* Central Visual Area */}
-        <div className="flex-1 flex flex-col items-center justify-center relative p-6">
+      {/* Central Visual Area */}
+      <div className="flex-1 flex flex-col items-center justify-center relative p-6">
 
-            {/* Real-time Subtitles - Centered to avoid overlap with mic button area */}
-            <VoiceSubtitle
-                text={subtitleText}
-                isVisible={showSubtitle && isConnected}
-                role={subtitleRole}
-                position="center"
-                typewriterEffect={false} // Disable typewriter for real-time updates
-                maxWidth="80%"
-                opacity={0.7}
-                fontSize="text-xl md:text-2xl"
-            />
+        {/* Real-time Subtitles - Centered to avoid overlap with mic button area */}
+        <VoiceSubtitle
+          text={subtitleText}
+          isVisible={showSubtitle && isConnected}
+          role={subtitleRole}
+          position="center"
+          typewriterEffect={false} // Disable typewriter for real-time updates
+          maxWidth="80%"
+          opacity={0.7}
+          fontSize="text-xl md:text-2xl"
+        />
 
-            {/* Connection Status Messages */}
-            {isConnecting && (
-                <div className="text-center space-y-4">
-                    <div className="w-10 h-10 border-t-2 border-white/50 rounded-full animate-spin mx-auto" />
-                    <p className="text-white/60 font-light animate-pulse">Connecting to Gemini...</p>
-                </div>
-            )}
+        {/* Connection Status Messages */}
+        {isConnecting && (
+          <div className="text-center space-y-4">
+            <div className="w-10 h-10 border-t-2 border-white/50 rounded-full animate-spin mx-auto" />
+            <p className="text-white/60 font-light animate-pulse">{t('session:loading.connectingToGemini')}</p>
+          </div>
+        )}
 
 
 
-            {/* Show error if any */}
-            {geminiError && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 max-w-md text-center">
-                    <p className="text-red-400 text-sm mb-2 font-semibold">Connection Error</p>
-                    <p className="text-red-300 text-xs">{geminiError}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-lg text-red-300 text-xs transition-colors"
-                    >
-                        Reload Page
-                    </button>
-                </div>
-            )}
-        </div>
-
-        {/* Bottom Controls */}
-        <div className="p-8 flex flex-col items-center gap-6 z-20">
-            {/* Mic Button */}
-            <MicButton
-                isRecording={isConnected}
-                onClick={handleMicClick}
-                size={72}
-                glowColor={isConnected ? "rgb(34, 197, 94)" : "rgb(99, 102, 241)"}
-                breathingDuration={2.5}
-                disabled={isConnecting}
-            />
-
-            {!isConnected && !isConnecting && (
-                <p className="text-sm text-white/50 font-light">Tap to start your conversation</p>
-            )}
-            {isConnected && (
-                <p className="text-sm text-emerald-400 font-light">● Live - Speak freely</p>
-            )}
+        {/* Show error if any */}
+        {geminiError && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 max-w-md text-center">
+            <p className="text-red-400 text-sm mb-2 font-semibold">{t('session:errors.connectionError')}</p>
+            <p className="text-red-300 text-xs">{geminiError}</p>
             <button
-                onClick={endSession}
-                className="text-xs text-white/30 hover:text-white transition-colors border-b border-transparent hover:border-white"
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-lg text-red-300 text-xs transition-colors"
             >
-                End Session & Save Summary
+              {t('session:errors.reloadPage')}
             </button>
-        </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Controls */}
+      <div className="p-8 flex flex-col items-center gap-6 z-20">
+
+        {/* Unified Voice Control Card - Soundwave + Mic Button */}
+        <VoiceControlCard
+          audioLevel={inputAudioLevel}
+          isRecording={isConnected}
+          micState={getMicButtonState()}
+          onMicClick={handleMicClick}
+          disabled={isConnecting || isDisconnecting}
+          placeholder={
+            !isConnected && !isConnecting && !isDisconnecting
+              ? t('session:controls.tapToSpeak')
+              : isConnecting
+                ? t('common:status.connecting')
+                : isDisconnecting
+                  ? t('session:loading.disconnecting')
+                  : ''
+          }
+          showPlaceholder={true}
+          width="400px"
+        />
+
+        <button
+          onClick={handleEndSessionClick}
+          className="
+            flex items-center gap-2
+            text-sm text-[#0081A7] hover:text-[#00AFCC]
+            transition-all duration-200
+            px-4 py-2 rounded-lg
+            border border-[#0081A7]/30 hover:border-[#00AFCC]/60
+            bg-[#0081A7]/5 hover:bg-[#0081A7]/15
+            mt-2
+          "
+        >
+          <LogOut size={14} />
+          <span>{t('session:controls.endSession')}</span>
+        </button>
+      </div>
     </div>
   );
 
@@ -635,7 +880,7 @@ export default function App() {
       return (
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-2xl mx-auto">
           <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl text-center">
-            <p className="text-white/60">Loading summary...</p>
+            <p className="text-white/60">{t('errors:summary.loadingSummary')}</p>
           </div>
         </div>
       );
@@ -649,22 +894,22 @@ export default function App() {
     };
 
     return (
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 max-w-2xl mx-auto animate-fade-in">
-        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl">
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 py-12 max-w-2xl mx-auto animate-fade-in">
+        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 w-full shadow-2xl my-8">
           {/* Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <Sparkles size={32} className="text-emerald-400" />
             </div>
-            <h2 className="text-3xl font-serif text-white mb-2">Session Complete</h2>
+            <h2 className="text-3xl font-serif text-white mb-2">{t('session:summary.title')}</h2>
             <p className="text-white/50 text-sm">
-              {new Date(sessionSummary.endTime).toLocaleDateString()} • {new Date(sessionSummary.endTime).toLocaleTimeString()}
+              {formatDate(sessionSummary.endTime, i18n.language as SupportedLanguage)} • {formatTime(sessionSummary.endTime, i18n.language as SupportedLanguage)}
             </p>
           </div>
 
           {/* AI Summary */}
           <div className="mb-8 p-6 bg-white/5 rounded-xl border border-white/10">
-            <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">Conversation Summary</h3>
+            <h3 className="text-sm text-white/60 mb-3 uppercase tracking-wider">{t('session:summary.conversationSummary')}</h3>
             <p className="text-white/90 text-lg leading-relaxed font-light italic">
               "{sessionSummary.aiGeneratedSummary}"
             </p>
@@ -676,30 +921,39 @@ export default function App() {
               <div className="text-2xl font-semibold text-white mb-1">
                 {formatDuration(sessionSummary.duration)}
               </div>
-              <div className="text-xs text-white/50 uppercase tracking-wider">Duration</div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">{t('session:summary.duration')}</div>
             </div>
             <div className="text-center p-4 bg-white/5 rounded-lg border border-white/10">
               <div className="text-2xl font-semibold text-white mb-1">
                 {sessionSummary.turnCount}
               </div>
-              <div className="text-xs text-white/50 uppercase tracking-wider">Messages</div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">{t('session:summary.messages')}</div>
             </div>
             <div className="text-center p-4 bg-white/5 rounded-lg border border-white/10">
               <div className="text-2xl font-semibold text-white mb-1">
                 {sessionSummary.userMessageCount}/{sessionSummary.aiMessageCount}
               </div>
-              <div className="text-xs text-white/50 uppercase tracking-wider">You/AI</div>
+              <div className="text-xs text-white/50 uppercase tracking-wider">{t('session:summary.exchanges')}</div>
             </div>
           </div>
 
           {/* Actions */}
           <div className="flex gap-4 justify-center pt-6 border-t border-white/5">
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-3 bg-white text-black hover:bg-gray-200 rounded-full text-sm font-semibold transition-all"
-            >
-              Start New Chat
-            </button>
+            {saveSuccess ? (
+              <div className="px-6 py-3 bg-emerald-500 text-white rounded-full text-sm font-semibold flex items-center gap-2">
+                <Sparkles size={16} />
+                {t('session:summary.savedSuccessfully')}
+              </div>
+            ) : (
+              <button
+                onClick={handleSaveSession}
+                disabled={isSaving}
+                className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full text-sm font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save size={16} />
+                {isSaving ? t('session:loading.pleaseWait') : t('common:buttons.save')}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -708,13 +962,14 @@ export default function App() {
 
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden selection:bg-white/20">
+    <div className={`relative w-full h-screen bg-black selection:bg-white/20 ${appState === 'SUMMARY' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
       {/* Background Visuals - Always active now, uses default or custom photo */}
       <ParticleCanvas
         imageUrl={appState === 'LANDING' ? null : getCurrentPhotoUrl()}
         isActive={true}
         audioLevel={audioLevel}
+        audioRef={audioLevelRef}
       />
 
       {/* Audio Layer */}
@@ -726,12 +981,23 @@ export default function App() {
 
       {/* Rendering State Overlay */}
       {appState === 'RENDERING' && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
-              <div className="text-center">
-                  <div className="w-12 h-12 border-t-2 border-white rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-white/60 font-serif tracking-widest animate-pulse">STARTING THE CHAT...</p>
-              </div>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="text-center">
+            <div className="w-12 h-12 border-t-2 border-white rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-white/60 font-serif tracking-widest animate-pulse">{t('session:loading.startingChat')}</p>
           </div>
+        </div>
+      )}
+
+      {/* Summary Generation Loading Overlay */}
+      {isGeneratingSummary && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-t-2 border-emerald-400 rounded-full animate-spin mx-auto" />
+            <p className="text-white/60 font-serif tracking-widest animate-pulse">{t('session:loading.generatingSummary')}</p>
+            <p className="text-white/40 text-sm font-light">{t('session:loading.generatingSummaryHint')}</p>
+          </div>
+        </div>
       )}
 
       {/* Main Views */}
@@ -750,6 +1016,42 @@ export default function App() {
         onPhotoSelect={handlePhotoSelect}
         onPhotoDelete={handlePhotoDelete}
       />
+
+      {/* Login Modal */}
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
+
+      {/* Memory Garden Loading Overlay */}
+      {isLoadingHistory && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-t-2 border-[#EBD671] rounded-full animate-spin mx-auto" />
+            <p className="text-white/80 font-serif tracking-widest">{t('session:loading.loadingMemories')}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Memory Garden Overlays */}
+      {historyViewState === 'CALENDAR' && (
+        <CalendarView
+          onClose={closeHistory}
+          onSelectDate={handleDateSelect}
+          sessionsByDate={sessionsByDate}
+        />
+      )}
+
+      {historyViewState === 'CAROUSEL' && (
+        <CarouselView
+          date={selectedDateForHistory}
+          entries={selectedHistoryEntries}
+          onBack={openHistoryCalendar}
+          onClose={closeHistory}
+          onDeleteEntry={handleDeleteHistoryEntry}
+        />
+      )}
 
     </div>
   );
