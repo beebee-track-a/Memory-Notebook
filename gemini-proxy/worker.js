@@ -69,17 +69,18 @@ function handleCORS(request, env) {
 
 /**
  * Handle WebSocket proxy connections
+ *
+ * Security: API key is stored server-side as a Cloudflare secret.
+ * Client should NOT send the real API key - it will be ignored.
+ * Set the secret via: wrangler secret put GEMINI_API_KEY
  */
 async function handleWebSocket(request, env, url) {
-  // Extract API key from multiple sources (in order of priority)
-  const apiKey = url.searchParams.get('key')
-              || url.searchParams.get('access_token')
-              || request.headers.get('X-Api-Key')
-              || env.GEMINI_API_KEY;
+  // Use server-side API key only (ignore client-provided keys for security)
+  const apiKey = env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return new Response('API key required. Pass via ?key= parameter, X-Api-Key header, or configure GEMINI_API_KEY secret.', {
-      status: 401
+    return new Response('Server API key not configured. Run: wrangler secret put GEMINI_API_KEY', {
+      status: 500
     });
   }
 

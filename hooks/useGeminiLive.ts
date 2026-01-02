@@ -109,13 +109,16 @@ export const useGeminiLive = (
   }, []);
 
   const connect = useCallback(async (systemInstruction?: string) => {
+    const useProxy = import.meta.env.VITE_USE_PROXY === 'true';
+
     const apiKey =
       import.meta.env.VITE_GEMINI_API_KEY ||
       import.meta.env.VITE_API_KEY ||
       import.meta.env.GEMINI_API_KEY ||
       import.meta.env.API_KEY;
 
-    if (!apiKey) {
+    // When using proxy, API key is stored server-side, so we don't need it client-side
+    if (!apiKey && !useProxy) {
       setError("API Key not found in environment variables.");
       return;
     }
@@ -180,12 +183,15 @@ export const useGeminiLive = (
       scriptProcessor.connect(inputCtx.destination);
 
       // 5. Initialize Gemini Client (with optional Cloudflare proxy for China users)
-      console.log('🔑 Initializing Gemini with API key:', apiKey?.substring(0, 20) + '...');
-
-      const useProxy = import.meta.env.VITE_USE_PROXY === 'true';
       const proxyUrl = import.meta.env.VITE_GEMINI_PROXY_URL;
 
-      const aiConfig: { apiKey: string; httpOptions?: { baseUrl: string } } = { apiKey };
+      // When using proxy, use placeholder key since real key is stored server-side
+      // This prevents API key from being exposed in browser Network tab
+      const effectiveApiKey = useProxy ? 'PROXY_MODE' : apiKey;
+
+      console.log('🔑 Initializing Gemini, proxy mode:', useProxy);
+
+      const aiConfig: { apiKey: string; httpOptions?: { baseUrl: string } } = { apiKey: effectiveApiKey };
 
       if (useProxy && proxyUrl) {
         console.log('🌐 Using Cloudflare proxy:', proxyUrl);
