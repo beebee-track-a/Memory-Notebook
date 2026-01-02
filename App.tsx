@@ -25,19 +25,6 @@ export default function App() {
   // i18n hooks
   const { t, i18n } = useTranslation();
 
-  // Debug: Check API key on component mount
-  useEffect(() => {
-    const apiKey =
-      import.meta.env.VITE_GEMINI_API_KEY ||
-      import.meta.env.VITE_API_KEY ||
-      import.meta.env.GEMINI_API_KEY ||
-      import.meta.env.API_KEY;
-
-    console.log('🔍 App mounted. Checking environment:');
-    console.log('  - API_KEY exists:', !!apiKey);
-    console.log('  - API_KEY preview:', apiKey ? apiKey.substring(0, 20) + '...' : 'MISSING');
-    console.log('  - Vite env keys:', Object.keys(import.meta.env));
-  }, []);
 
   // State
   const [appState, setAppState] = useState<AppState>('LANDING');

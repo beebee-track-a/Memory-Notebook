@@ -11,14 +11,6 @@ export default defineConfig(({ mode }) => {
       env.GEMINI_API_KEY ||
       env.API_KEY;
 
-    // Check if HTTPS is enabled via environment variable
-    const useHttps = process.env.VITE_HTTPS === 'true';
-
-    if (apiKey) {
-      console.log('✅ API Key found:', apiKey.substring(0, 10) + '...');
-    } else {
-      console.warn('⚠️  WARNING: No API Key found in environment configuration.');
-    }
 
     console.log(`🔒 HTTPS: ${useHttps ? 'enabled' : 'disabled'}`);
 
