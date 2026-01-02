@@ -160,8 +160,16 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
           </div>
 
           {error && (
-            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <p className="text-red-400 text-sm">{error}</p>
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg space-y-2">
+              <p className="text-red-400 text-sm font-semibold">{t('errors:auth.errorTitle') || 'Authentication Error'}</p>
+              <p className="text-red-300 text-xs leading-relaxed">{error}</p>
+              {error.includes('Firebase Auth not initialized') && (
+                <div className="mt-2 pt-2 border-t border-red-500/20">
+                  <p className="text-red-300/80 text-xs">
+                    {t('errors:auth.configHint') || 'Please check your .env file and ensure all VITE_FIREBASE_* variables are set. See FIREBASE_SETUP.md for setup instructions.'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

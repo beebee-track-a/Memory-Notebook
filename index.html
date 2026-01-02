@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>Hobbi</title>
 
@@ -78,6 +78,29 @@
       .scrollbar-hide {
           -ms-overflow-style: none;
           scrollbar-width: none;
+      }
+      /* iOS Safe Area Support */
+      @supports (padding: max(0px)) {
+        body {
+          padding-left: env(safe-area-inset-left);
+          padding-right: env(safe-area-inset-right);
+        }
+      }
+      /* Ensure proper height on iOS and mobile browsers */
+      @supports (-webkit-touch-callout: none) {
+        html, body, #root {
+          height: -webkit-fill-available;
+        }
+      }
+      /* Dynamic viewport height support for mobile browsers */
+      :root {
+        --vh: 1vh;
+      }
+      /* Use dynamic viewport height when supported */
+      @supports (height: 100dvh) {
+        html, body, #root {
+          height: 100dvh;
+        }
       }
     </style>
   <script type="importmap">

@@ -24,7 +24,7 @@ import {
   deleteObject,
   UploadTask,
 } from 'firebase/storage';
-import { auth, db, storage } from './firebase';
+import { auth, db, storage, initializationError } from './firebase';
 import type {
   ChatMessage,
   MessageAttachment,
@@ -46,7 +46,10 @@ import type {
  */
 export function getCurrentUserId(): string {
   if (!auth) {
-    throw new Error('Firebase Auth not initialized. Please check your Firebase configuration.');
+    const errorMsg = initializationError 
+      ? `Firebase Auth not initialized: ${initializationError}`
+      : 'Firebase Auth not initialized. Please check your Firebase configuration. Make sure all VITE_FIREBASE_* environment variables are set in your .env file. See FIREBASE_SETUP.md for setup instructions.';
+    throw new Error(errorMsg);
   }
   const user = auth.currentUser;
   if (!user) {
