@@ -10,11 +10,6 @@ export default defineConfig(({ mode }) => {
       env.GEMINI_API_KEY ||
       env.API_KEY;
 
-    if (apiKey) {
-      console.log('✅ API Key found:', apiKey.substring(0, 10) + '...');
-    } else {
-      console.warn('⚠️  WARNING: No API Key found in environment configuration.');
-    }
 
     return {
       server: {
